@@ -1,0 +1,112 @@
+# Blvckshell Agent Harness — local orchestration.
+#
+# Default (one command):   docker compose -f docker/docker-compose.yml up --build
+#   Brings up Redis, the harness API (with the full brain federation running
+#   in-process over the Redis bus), and the Next.js command interface.
+#
+# Distributed brains:      docker compose -f docker/docker-compose.yml --profile distributed up --build
+#   Runs each brain in its own container. Set BLVCKSHELL_INPROCESS_BRAINS=false
+#   for the `harness` service so the API delegates to the brain containers.
+
+name: blvckshell
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  harness:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.harness
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      BLVCKSHELL_REDIS_URL: redis://redis:6379/0
+      BLVCKSHELL_INFERENCE_PROVIDER: ${BLVCKSHELL_INFERENCE_PROVIDER:-stub}
+      BLVCKSHELL_ANTHROPIC_API_KEY: ${BLVCKSHELL_ANTHROPIC_API_KEY:-}
+      BLVCKSHELL_SUPABASE_URL: ${BLVCKSHELL_SUPABASE_URL:-}
+      BLVCKSHELL_SUPABASE_KEY: ${BLVCKSHELL_SUPABASE_KEY:-}
+      BLVCKSHELL_INPROCESS_BRAINS: ${BLVCKSHELL_INPROCESS_BRAINS:-true}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - harness
+    environment:
+      NEXT_PUBLIC_HARNESS_API_URL: ${NEXT_PUBLIC_HARNESS_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+
+  # ── Distributed brains (profile: distributed) ──────────────────────────────
+  # Enable with `--profile distributed`. Remember to set
+  # BLVCKSHELL_INPROCESS_BRAINS=false for the harness service.
+  ckos:
+    profiles: ["distributed"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.brain
+    command: ["ckos"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      BLVCKSHELL_REDIS_URL: redis://redis:6379/0
+      BLVCKSHELL_INFERENCE_PROVIDER: ${BLVCKSHELL_INFERENCE_PROVIDER:-stub}
+      BLVCKSHELL_ANTHROPIC_API_KEY: ${BLVCKSHELL_ANTHROPIC_API_KEY:-}
+
+  venture:
+    profiles: ["distributed"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.brain
+    command: ["venture"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      BLVCKSHELL_REDIS_URL: redis://redis:6379/0
+      BLVCKSHELL_INFERENCE_PROVIDER: ${BLVCKSHELL_INFERENCE_PROVIDER:-stub}
+      BLVCKSHELL_ANTHROPIC_API_KEY: ${BLVCKSHELL_ANTHROPIC_API_KEY:-}
+
+  commander:
+    profiles: ["distributed"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.brain
+    command: ["commander"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      BLVCKSHELL_REDIS_URL: redis://redis:6379/0
+      BLVCKSHELL_INFERENCE_PROVIDER: ${BLVCKSHELL_INFERENCE_PROVIDER:-stub}
+      BLVCKSHELL_ANTHROPIC_API_KEY: ${BLVCKSHELL_ANTHROPIC_API_KEY:-}
+
+  capital:
+    profiles: ["distributed"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.brain
+    command: ["capital"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      BLVCKSHELL_REDIS_URL: redis://redis:6379/0
+      BLVCKSHELL_INFERENCE_PROVIDER: ${BLVCKSHELL_INFERENCE_PROVIDER:-stub}
+      BLVCKSHELL_ANTHROPIC_API_KEY: ${BLVCKSHELL_ANTHROPIC_API_KEY:-}

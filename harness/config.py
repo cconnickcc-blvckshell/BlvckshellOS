@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
     llm_temperature: float = 0.2
 
+    # --- Topology --------------------------------------------------------
+    # When true (default) the API runs the full brain federation in-process.
+    # Set false to run brains as standalone containers over a Redis bus.
+    inprocess_brains: bool = True
+
     # --- Agent loop ------------------------------------------------------
     max_agent_iterations: int = 8
     heartbeat_interval_seconds: int = 15

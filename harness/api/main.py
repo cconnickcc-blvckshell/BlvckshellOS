@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     runtime = create_runtime()
     await runtime.start()
-    brains = default_brains(runtime)
+    brains = default_brains(runtime) if settings.inprocess_brains else []
     await start_brains(brains)
     intake = IntakeService(runtime)
     await intake.start()

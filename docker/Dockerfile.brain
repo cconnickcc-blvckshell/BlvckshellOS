@@ -1,0 +1,29 @@
+# Blvckshell Brain — one brain per container.
+# Build context is the repository root: `docker build -f docker/Dockerfile.brain .`
+# Pass the brain id at run time, e.g. `docker run <image> venture`.
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    POETRY_VERSION=1.8.3 \
+    POETRY_VIRTUALENVS_CREATE=false
+
+WORKDIR /app
+
+RUN pip install "poetry==${POETRY_VERSION}"
+
+COPY pyproject.toml poetry.lock README.md ./
+RUN poetry install --only main --no-root
+
+COPY harness ./harness
+COPY brains ./brains
+COPY memory ./memory
+COPY intake ./intake
+COPY scripts ./scripts
+
+RUN poetry install --only main
+
+# The brain id is supplied as the container command, e.g. `venture`.
+ENTRYPOINT ["python", "-m", "scripts.register_brain"]
+CMD ["ckos"]
