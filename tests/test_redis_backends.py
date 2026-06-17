@@ -83,7 +83,7 @@ async def test_redis_registry(fake_redis) -> None:
     )
     assert (await reg.get("venture")).handles("x")
     assert len(await reg.list_all()) == 1
-    matches = await reg.find_by_capability("x")
-    assert matches[0].brain_id == "venture"
+    match = await reg.find_by_capability("x")
+    assert match is not None and match.brain_id == "venture"
     await reg.deregister("venture")
     assert await reg.get("venture") is None

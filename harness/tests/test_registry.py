@@ -20,12 +20,21 @@ async def test_register_and_get() -> None:
     assert found.handles("idea_validation")
 
 
-async def test_find_by_capability() -> None:
+async def test_find_all_by_capability() -> None:
     reg = InMemoryBrainRegistry()
     await reg.register(_info("venture", ["idea_validation"]))
     await reg.register(_info("commander", ["execution_planning"]))
-    matches = await reg.find_by_capability("execution_planning")
+    matches = await reg.find_all_by_capability("execution_planning")
     assert [m.brain_id for m in matches] == ["commander"]
+
+
+async def test_find_by_capability_returns_single_best() -> None:
+    reg = InMemoryBrainRegistry()
+    await reg.register(_info("venture", ["idea_validation"]))
+    await reg.register(_info("commander", ["execution_planning"]))
+    match = await reg.find_by_capability("execution_planning")
+    assert match is not None and match.brain_id == "commander"
+    assert await reg.find_by_capability("missing_capability") is None
 
 
 async def test_heartbeat_and_state() -> None:

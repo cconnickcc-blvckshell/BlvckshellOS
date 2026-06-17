@@ -36,8 +36,9 @@ from harness.schemas.message import (
     HarnessMessage,
     MessageType,
 )
+from harness.schemas.objective import AgentCall
 from harness.schemas.result import Result, ResultStatus
-from harness.schemas.task import Task
+from harness.schemas.task import Task, TaskStatus
 
 from brains._base.tools import BaseTool
 
@@ -143,6 +144,112 @@ class BaseBrain(abc.ABC):
     async def set_state(self, state: BrainState) -> None:
         """Update this brain's live state (drives the UI status orbs)."""
         await self.runtime.registry.set_state(self.brain_id, state)
+
+    # -- sub-agent spawning (first-class contract) -------------------------
+
+    async def spawn_agent(
+        self,
+        *,
+        capability: str,
+        objective: str,
+        parent_task_id: str,
+        run_id: str,
+        objective_id: str,
+        inputs: dict | None = None,
+        timeout: float = 60.0,
+    ) -> AgentCall:
+        """Spawn a sub-agent for a capability and await its result.
+
+        The sub-agent is dispatched over the harness bus to whatever brain is
+        registered for ``capability`` and runs through the same machinery (bus,
+        registry, agent loop, judgment logging). The result is awaited and
+        returned as an :class:`AgentCall` with the ``result`` field populated.
+
+        A failed sub-agent (no brain for the capability, or a timeout) returns an
+        :class:`AgentCall` with ``status=FAILED`` and ``error`` set — it never
+        raises, so it can never crash the parent brain or the harness.
+
+        Args:
+            capability: The capability the sub-agent must handle.
+            objective: The instruction for the sub-agent.
+            parent_task_id: The id of the task spawning this sub-agent.
+            run_id: The run this sub-agent belongs to.
+            objective_id: The objective this sub-agent serves.
+            inputs: Optional structured inputs for the sub-agent.
+            timeout: Max seconds to wait for the sub-agent's result.
+
+        Returns:
+            The completed :class:`AgentCall`.
+        """
+        call = AgentCall(
+            task_id=parent_task_id,
+            run_id=run_id,
+            objective_id=objective_id,
+            spawned_by=self.brain_id,
+            capability=capability,
+            objective=objective,
+            inputs=inputs or {},
+        )
+        reply_address = f"agent:{call.agent_call_id}"
+
+        await self.runtime.observer.record(
+            AuditEventType.AGENT_SPAWNED,
+            source=self.brain_id,
+            context_id=run_id,
+            message=f"spawned sub-agent for capability '{capability}'",
+            data={"agent_call_id": call.agent_call_id, "objective": objective[:120]},
+        )
+
+        brain_info = await self.runtime.registry.find_by_capability(capability)
+        if brain_info is None:
+            call.status = TaskStatus.FAILED
+            call.error = f"No brain registered for capability '{capability}'"
+            return call
+
+        task = Task(
+            run_id=run_id,
+            objective_id=objective_id,
+            capability=capability,
+            objective=objective,
+            inputs=inputs or {},
+            assigned_brain=brain_info.brain_id,
+        )
+        task_msg = HarnessMessage(
+            source=reply_address,
+            destination=brain_info.brain_id,
+            message_type=MessageType.TASK,
+            payload=task.model_dump(mode="json"),
+            context_id=run_id,
+            metadata={
+                "objective_id": objective_id,
+                "run_id": run_id,
+                "task_id": task.id,
+                "parent_task_id": parent_task_id,
+                "agent_call_id": call.agent_call_id,
+                "spawned_by": self.brain_id,
+            },
+        )
+        await self.runtime.bus.enqueue(brain_info.brain_id, task_msg)
+
+        result_msg = await self.runtime.bus.dequeue(reply_address, timeout=timeout)
+        if result_msg is None:
+            call.status = TaskStatus.FAILED
+            call.error = f"Sub-agent timed out after {timeout}s"
+            return call
+
+        result = Result.model_validate(result_msg.payload)
+        call.result = result.summary
+        call.error = result.error
+        call.status = TaskStatus.COMPLETED if result.succeeded else TaskStatus.FAILED
+
+        await self.runtime.observer.record(
+            AuditEventType.AGENT_RETURNED,
+            source=self.brain_id,
+            context_id=run_id,
+            message=f"sub-agent returned for capability '{capability}'",
+            data={"agent_call_id": call.agent_call_id, "succeeded": result.succeeded},
+        )
+        return call
 
     async def _heartbeat_loop(self) -> None:
         """Emit heartbeats on the configured interval until stopped."""

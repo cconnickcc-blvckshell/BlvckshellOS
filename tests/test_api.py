@@ -39,7 +39,10 @@ def test_brains_registered(client: TestClient) -> None:
     resp = client.get("/brains")
     assert resp.status_code == 200
     ids = {b["brain_id"] for b in resp.json()}
-    assert {"ckos", "venture", "commander", "capital"}.issubset(ids)
+    # Worker brains register; the orchestrator (formerly "ckos") is not a brain.
+    assert {"venture", "commander", "capital"}.issubset(ids)
+    assert "ckos" not in ids
+    assert "orchestrator" not in ids
 
 
 def test_intake_sync_runs_full_pipeline(client: TestClient) -> None:
