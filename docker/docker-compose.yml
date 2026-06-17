@@ -1,0 +1,66 @@
+# Blvckshell Harness — local orchestration.
+#
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# Brings up Redis, the harness API (with brains in-process), and the Next.js
+# command interface. Supabase and Anthropic are optional — without them the
+# harness runs fully offline (in-memory memory + deterministic LLM).
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  harness:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.harness
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      BLVCKSHELL_REDIS_URL: redis://redis:6379/0
+      BLVCKSHELL_USE_IN_MEMORY_BUS: "false"
+      BLVCKSHELL_RUN_WORKERS_IN_PROCESS: "true"
+      BLVCKSHELL_SUPABASE_URL: ${BLVCKSHELL_SUPABASE_URL:-}
+      BLVCKSHELL_SUPABASE_KEY: ${BLVCKSHELL_SUPABASE_KEY:-}
+      BLVCKSHELL_ANTHROPIC_API_KEY: ${BLVCKSHELL_ANTHROPIC_API_KEY:-}
+      BLVCKSHELL_ANTHROPIC_MODEL: ${BLVCKSHELL_ANTHROPIC_MODEL:-claude-3-5-sonnet-latest}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - harness
+    environment:
+      NEXT_PUBLIC_HARNESS_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+
+  # --- Distributed brains (optional) ----------------------------------------
+  # To run each brain in its own container instead of in-process, set
+  # BLVCKSHELL_RUN_WORKERS_IN_PROCESS=false on the harness above and enable a
+  # service per brain, e.g.:
+  #
+  # venture:
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/Dockerfile.brain
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   environment:
+  #     BRAIN_ID: venture
+  #     BLVCKSHELL_REDIS_URL: redis://redis:6379/0

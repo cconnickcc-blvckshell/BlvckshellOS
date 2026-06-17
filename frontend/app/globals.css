@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: #080810;
+  color: #e8e8f0;
+  background-image: radial-gradient(
+      circle at 15% -10%,
+      rgba(123, 47, 190, 0.12),
+      transparent 40%
+    ),
+    radial-gradient(circle at 90% 0%, rgba(168, 85, 247, 0.08), transparent 35%);
+  background-attachment: fixed;
+}
+
+/* Thin, deep-space scrollbar. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f0f1a;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a1a2e;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a2a44;
+}
+
+.glass {
+  background: rgba(15, 15, 26, 0.72);
+  backdrop-filter: blur(10px);
+  border: 1px solid #1a1a2e;
+}

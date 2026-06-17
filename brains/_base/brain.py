@@ -1,0 +1,322 @@
+"""The plugin contract every brain implements.
+
+A brain is a self-contained specialist. It registers with the harness, listens
+on its own queue, and runs the agent loop on each task. The harness handles
+transport, discovery, memory, and audit — a new brain only implements three
+methods and declares its capabilities.
+
+To add a brain:
+
+1. Extend :class:`BaseBrain` (or :class:`LLMBrain` for the common case).
+2. Implement ``handle_task``, ``get_context``, ``log_judgment``.
+3. Declare its ``capabilities``.
+4. ``docker compose up``.
+
+The harness does the rest.
+"""
+
+from __future__ import annotations
+
+import abc
+import asyncio
+from dataclasses import dataclass
+
+from harness.config import Settings
+from harness.core.agent_loop import AgentLoop
+from harness.core.llm import LLMClient
+from harness.core.memory import SharedMemory
+from harness.core.message_bus import MessageBus
+from harness.core.observer import Observer
+from harness.core.registry import BrainRegistry
+from harness.logging_config import get_logger
+from harness.schemas.audit import AuditEventType
+from harness.schemas.brain_info import BrainContext, BrainInfo, BrainState
+from harness.schemas.judgment import JudgmentEntry
+from harness.schemas.message import (
+    HarnessMessage,
+    MessageType,
+)
+from harness.schemas.result import Result, ResultStatus
+from harness.schemas.task import Task
+
+from brains._base.tools import BaseTool
+
+logger = get_logger("brain")
+
+
+@dataclass(slots=True)
+class BrainRuntime:
+    """The harness services injected into every brain.
+
+    Attributes:
+        bus: The message bus for task/result transport.
+        registry: The brain registry for registration and heartbeats.
+        memory: The shared-memory facade.
+        observer: The Observer for audit logging.
+        llm: The LLM client used by the agent loop.
+        settings: Runtime settings.
+    """
+
+    bus: MessageBus
+    registry: BrainRegistry
+    memory: SharedMemory
+    observer: Observer
+    llm: LLMClient
+    settings: Settings
+
+
+class BaseBrain(abc.ABC):
+    """Abstract base every brain extends.
+
+    Subclasses set the class attributes (:attr:`brain_id`, :attr:`name`, etc.)
+    and implement the three abstract methods. Lifecycle methods (``register``,
+    ``heartbeat``, ``serve``) are provided and should not be overridden.
+    """
+
+    brain_id: str = "base"
+    name: str = "Base Brain"
+    description: str = "Abstract brain."
+    capabilities: list[str] = []
+    model: str = "fake-llm"
+    tools: list[BaseTool] = []
+
+    def __init__(self, runtime: BrainRuntime) -> None:
+        """Bind the brain to its harness runtime.
+
+        Args:
+            runtime: The injected harness services.
+        """
+        self.runtime = runtime
+        self._stopped = asyncio.Event()
+
+    # -- contract ----------------------------------------------------------
+
+    @abc.abstractmethod
+    async def handle_task(self, task: HarnessMessage) -> HarnessMessage:
+        """Process a task message and return a result message."""
+
+    @abc.abstractmethod
+    async def get_context(self, context_id: str) -> BrainContext:
+        """Load relevant context for this brain from shared memory."""
+
+    @abc.abstractmethod
+    async def log_judgment(self, entry: JudgmentEntry) -> None:
+        """Record a decision to the Judgment Ledger."""
+
+    # -- lifecycle (do not override) ---------------------------------------
+
+    def info(self) -> BrainInfo:
+        """Return this brain's advertisement record for the registry."""
+        return BrainInfo(
+            brain_id=self.brain_id,
+            name=self.name,
+            description=self.description,
+            capabilities=list(self.capabilities),
+            model=self.model,
+            tools=[t.name for t in self.tools],
+            state=BrainState.IDLE,
+        )
+
+    async def register(self) -> None:
+        """Register with the harness on startup."""
+        await self.runtime.registry.register(self.info())
+        await self.runtime.observer.record(
+            AuditEventType.BRAIN_REGISTERED,
+            source=self.brain_id,
+            message=f"{self.name} registered",
+            data={"capabilities": self.capabilities, "model": self.model},
+        )
+
+    async def deregister(self) -> None:
+        """Remove this brain from the registry."""
+        await self.runtime.registry.deregister(self.brain_id)
+        await self.runtime.observer.record(
+            AuditEventType.BRAIN_DEREGISTERED,
+            source=self.brain_id,
+            message=f"{self.name} deregistered",
+        )
+
+    async def heartbeat(self) -> None:
+        """Report a single heartbeat to the registry."""
+        await self.runtime.registry.heartbeat(self.brain_id)
+
+    async def set_state(self, state: BrainState) -> None:
+        """Update this brain's live state (drives the UI status orbs)."""
+        await self.runtime.registry.set_state(self.brain_id, state)
+
+    async def _heartbeat_loop(self) -> None:
+        """Emit heartbeats on the configured interval until stopped."""
+        interval = self.runtime.settings.heartbeat_interval_seconds
+        while not self._stopped.is_set():
+            await self.heartbeat()
+            try:
+                await asyncio.wait_for(self._stopped.wait(), timeout=interval)
+            except TimeoutError:
+                continue
+
+    async def serve(self) -> None:
+        """Register, then process tasks off the bus until stopped.
+
+        This is the brain's main entry point inside its container. A failure on
+        any single task is caught and logged — it never stops the brain or the
+        harness.
+        """
+        await self.register()
+        heartbeat = asyncio.create_task(self._heartbeat_loop())
+        try:
+            while not self._stopped.is_set():
+                message = await self.runtime.bus.dequeue(self.brain_id, timeout=1.0)
+                if message is None:
+                    continue
+                if message.message_type != MessageType.TASK:
+                    continue
+                await self._process(message)
+        finally:
+            heartbeat.cancel()
+            await self.set_state(BrainState.OFFLINE)
+
+    async def _process(self, message: HarnessMessage) -> None:
+        """Run one task end-to-end with full audit and error isolation."""
+        await self.runtime.observer.record(
+            AuditEventType.TASK_STARTED,
+            source=self.brain_id,
+            context_id=message.context_id,
+            message=message.payload.get("objective", ""),
+            data={"task_id": message.payload.get("id")},
+        )
+        await self.set_state(BrainState.THINKING)
+        try:
+            result_message = await self.handle_task(message)
+            await self.runtime.bus.enqueue(result_message.destination, result_message)
+            await self.runtime.bus.mirror_to_observer(result_message)
+            await self.runtime.observer.record(
+                AuditEventType.TASK_COMPLETED,
+                source=self.brain_id,
+                context_id=message.context_id,
+                data={"task_id": message.payload.get("id")},
+            )
+        except Exception as exc:
+            logger.error("brain_task_failed", brain=self.brain_id, error=str(exc))
+            await self.set_state(BrainState.ERROR)
+            await self.runtime.observer.record(
+                AuditEventType.TASK_FAILED,
+                source=self.brain_id,
+                context_id=message.context_id,
+                message=str(exc),
+                data={"task_id": message.payload.get("id")},
+            )
+            failure = self._failure_message(message, exc)
+            await self.runtime.bus.enqueue(failure.destination, failure)
+            await self.runtime.bus.mirror_to_observer(failure)
+        finally:
+            await self.set_state(BrainState.IDLE)
+
+    def _failure_message(self, task: HarnessMessage, exc: Exception) -> HarnessMessage:
+        """Build a RESULT message describing a failed task."""
+        result = Result(
+            task_id=task.payload.get("id", task.id),
+            brain_id=self.brain_id,
+            status=ResultStatus.FAILURE,
+            summary="Task failed.",
+            error=str(exc),
+        )
+        return task.reply(
+            source=self.brain_id,
+            message_type=MessageType.RESULT,
+            payload=result.model_dump(mode="json"),
+        )
+
+    def stop(self) -> None:
+        """Signal the serve loop to stop after the current task."""
+        self._stopped.set()
+
+
+class LLMBrain(BaseBrain):
+    """A ready-made brain that solves tasks with the LLM agent loop.
+
+    Most specialist brains only need to set their identity, capabilities, and a
+    :attr:`system_prompt`. This base wires the agent loop, context loading,
+    judgment logging, and result emission.
+    """
+
+    system_prompt: str = "You are a specialist brain in the Blvckshell harness."
+    max_iterations: int = 6
+
+    async def get_context(self, context_id: str) -> BrainContext:
+        """Load this brain's working context from shared memory."""
+        return await self.runtime.memory.load_context(context_id, self.brain_id)
+
+    async def log_judgment(self, entry: JudgmentEntry) -> None:
+        """Record a belief to the Judgment Ledger via shared memory."""
+        await self.runtime.memory.record_judgment(entry)
+
+    def build_user_prompt(self, task: Task, context: BrainContext) -> str:
+        """Render the task and relevant context into the first user message.
+
+        Args:
+            task: The task to perform.
+            context: The loaded working context.
+
+        Returns:
+            A prompt string for the agent loop.
+        """
+        doctrine = "\n".join(f"- {d.belief}" for d in context.doctrine[:5]) or "- (none yet)"
+        inputs = task.inputs or {}
+        return (
+            f"OBJECTIVE:\n{task.objective}\n\n"
+            f"INPUTS:\n{inputs}\n\n"
+            f"RELEVANT DOCTRINE:\n{doctrine}\n\n"
+            "Complete the objective. Be concrete and decisive. End with a clear, "
+            "self-contained summary of your conclusion."
+        )
+
+    async def handle_task(self, task: HarnessMessage) -> HarnessMessage:
+        """Run the agent loop for a task and emit a structured result."""
+        parsed = Task.model_validate(task.payload)
+        context = await self.get_context(task.context_id)
+        await self.set_state(BrainState.EXECUTING)
+
+        loop = AgentLoop(
+            llm=self.runtime.llm,
+            tools=self.tools,
+            observer=self.runtime.observer,
+            max_iterations=self.max_iterations,
+        )
+        outcome = await loop.run(
+            brain_id=self.brain_id,
+            context_id=task.context_id,
+            system_prompt=self.system_prompt,
+            user_prompt=self.build_user_prompt(parsed, context),
+            model=self.model if self.model != "fake-llm" else None,
+        )
+
+        judgment = JudgmentEntry(
+            brain_id=self.brain_id,
+            context_id=task.context_id,
+            belief=outcome.final_text[:500] or "Completed task.",
+            confidence=0.7,
+            evidence=[f"tool:{inv['tool']}" for inv in outcome.tool_invocations],
+            assumptions=["LLM reasoning over provided inputs and doctrine."],
+        )
+        await self.log_judgment(judgment)
+
+        result = Result(
+            task_id=parsed.id,
+            brain_id=self.brain_id,
+            status=ResultStatus.SUCCESS,
+            output={"analysis": outcome.final_text},
+            summary=outcome.final_text[:280],
+            judgment_ids=[judgment.id],
+            metrics=outcome.metrics,
+        )
+        await self.runtime.memory.append_working(
+            task.context_id,
+            "history",
+            {"brain": self.brain_id, "summary": result.summary},
+        )
+        return task.reply(
+            source=self.brain_id,
+            message_type=MessageType.RESULT,
+            payload=result.model_dump(mode="json"),
+            metadata=outcome.metrics,
+        )

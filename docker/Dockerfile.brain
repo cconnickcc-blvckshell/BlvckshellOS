@@ -1,0 +1,29 @@
+# Blvckshell Harness — generic brain image.
+# Runs a single brain in its own container (distributed deployment pattern).
+# Set BRAIN_ID to choose which brain to serve, e.g. BRAIN_ID=venture.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    POETRY_VERSION=1.8.3 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    BRAIN_ID=venture
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
+
+COPY pyproject.toml ./
+RUN poetry install --no-root --without dev --no-interaction --no-ansi || \
+    pip install fastapi "uvicorn[standard]" pydantic pydantic-settings redis \
+        anthropic supabase httpx structlog python-dotenv
+
+COPY harness ./harness
+COPY brains ./brains
+COPY memory ./memory
+COPY intake ./intake
+COPY scripts ./scripts
+
+# shell form so $BRAIN_ID is expanded at runtime.
+CMD python -m scripts.run_brain "$BRAIN_ID"

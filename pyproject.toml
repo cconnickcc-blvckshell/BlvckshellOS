@@ -1,0 +1,67 @@
+[tool.poetry]
+name = "blvckshell"
+version = "0.1.0"
+description = "Blvckshell Agent Harness — a personal AI operating system that orchestrates a federation of specialized AI brains."
+authors = ["Blvckshell Operator <operator@blvckshell.local>"]
+readme = "README.md"
+license = "Proprietary"
+packages = [
+    { include = "harness" },
+    { include = "brains" },
+    { include = "memory" },
+    { include = "intake" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.0"
+uvicorn = { extras = ["standard"], version = "^0.32.0" }
+pydantic = "^2.9.0"
+pydantic-settings = "^2.6.0"
+redis = "^5.2.0"
+anthropic = "^0.40.0"
+httpx = "^0.27.0"
+supabase = "^2.10.0"
+python-dotenv = "^1.0.1"
+structlog = "^24.4.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+pytest-cov = "^6.0.0"
+ruff = "^0.8.0"
+fakeredis = "^2.26.0"
+
+[tool.poetry.scripts]
+blvckshell-harness = "harness.api.main:run"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["harness", "brains", "memory", "intake"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "C4", "SIM", "RUF"]
+ignore = [
+    "B008",    # FastAPI uses function calls in argument defaults (Depends/Query)
+    "UP042",   # keep the explicit `str, Enum` message-protocol pattern
+    "RUF012",  # brain/tool class attributes are the plugin contract, not state
+    "ASYNC109", # queue/dequeue timeout params are part of the bus interface
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["B011"]
+"**/test_*.py" = ["B011"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["harness/tests", "brains", "memory", "intake", "tests"]
+addopts = "-ra -q --cov=harness --cov=brains --cov=memory --cov=intake --cov-report=term-missing"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+omit = ["*/tests/*", "*/test_*.py"]
