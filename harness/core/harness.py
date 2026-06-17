@@ -100,11 +100,13 @@ class Harness:
         await self.memory.connect()
 
         await self.ckos.register()
-        for brain in self.workers:
-            self._serve_tasks.append(asyncio.create_task(brain.serve()))
-
-        # Give worker serve loops a moment to register before first pipeline.
-        await asyncio.sleep(0.05)
+        if self.settings.run_workers_in_process:
+            for brain in self.workers:
+                self._serve_tasks.append(asyncio.create_task(brain.serve()))
+            # Give worker serve loops a moment to register before first pipeline.
+            await asyncio.sleep(0.05)
+        else:
+            logger.info("harness_distributed_workers", note="workers run as separate processes")
         self._started = True
         logger.info(
             "harness_started",

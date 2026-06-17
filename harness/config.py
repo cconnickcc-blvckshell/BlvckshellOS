@@ -21,6 +21,8 @@ class Settings(BaseSettings):
         log_level: Root log level for structured logging.
         redis_url: Connection URL for the Redis message bus and working memory.
         use_in_memory_bus: Force the in-memory bus/memory backends (tests/offline).
+        run_workers_in_process: Run specialist brains inside the harness process.
+            Set false to run each brain in its own container against shared Redis.
         supabase_url: Supabase project URL for episodic memory and doctrine.
         supabase_key: Supabase service key.
         anthropic_api_key: Anthropic API key for Claude inference.
@@ -45,6 +47,7 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
     use_in_memory_bus: bool = False
+    run_workers_in_process: bool = True
 
     supabase_url: str | None = None
     supabase_key: str | None = None
