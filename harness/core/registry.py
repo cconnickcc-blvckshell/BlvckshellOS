@@ -53,13 +53,30 @@ class BrainRegistry(abc.ABC):
     async def list_all(self) -> list[BrainInfo]:
         """Return every registered brain's record."""
 
-    async def find_by_capability(self, capability: str) -> list[BrainInfo]:
+    async def find_all_by_capability(self, capability: str) -> list[BrainInfo]:
         """Return all registered brains advertising a capability.
 
         Args:
             capability: The capability to match.
         """
         return [b for b in await self.list_all() if b.handles(capability)]
+
+    async def find_by_capability(self, capability: str) -> BrainInfo | None:
+        """Return the best registered brain for a capability, or ``None``.
+
+        When several brains advertise the capability, the one with the most
+        recent heartbeat is chosen (the liveliest candidate).
+
+        Args:
+            capability: The capability to route to.
+
+        Returns:
+            The chosen :class:`BrainInfo`, or ``None`` if none is registered.
+        """
+        candidates = await self.find_all_by_capability(capability)
+        if not candidates:
+            return None
+        return max(candidates, key=lambda b: b.last_heartbeat)
 
     async def heartbeat(
         self, brain_id: str, *, state: BrainState | None = None

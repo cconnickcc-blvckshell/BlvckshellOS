@@ -28,7 +28,9 @@ class Task(BaseModel):
     """A discrete, executable unit of work assigned to a brain.
 
     Attributes:
-        id: Unique identifier for the task.
+        id: Unique identifier for the task (the ``task_id``).
+        run_id: The parent run this task belongs to.
+        objective_id: The grandparent objective this task serves.
         capability: The capability required to handle the task. The registry
             uses this to route to a brain advertising the capability.
         objective: Human-readable description of what to accomplish.
@@ -40,6 +42,8 @@ class Task(BaseModel):
     """
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    run_id: str | None = None
+    objective_id: str | None = None
     capability: str
     objective: str
     inputs: dict[str, Any] = Field(default_factory=dict)
@@ -47,6 +51,11 @@ class Task(BaseModel):
     priority: int = Field(default=3, ge=1, le=5)
     status: TaskStatus = TaskStatus.PENDING
     assigned_brain: str | None = None
+
+    @property
+    def task_id(self) -> str:
+        """Alias for :attr:`id`, matching the Objective->Run->Task vocabulary."""
+        return self.id
 
     @property
     def is_independent(self) -> bool:

@@ -14,6 +14,7 @@ from harness.schemas.message import (
     HarnessMessage,
     MessageType,
 )
+from harness.schemas.objective import AgentCall, Objective, Run, RunStatus
 from harness.schemas.result import Result, ResultStatus
 from harness.schemas.task import Task, TaskStatus
 
@@ -21,6 +22,7 @@ __all__ = [
     "BROADCAST_DESTINATION",
     "HARNESS_DESTINATION",
     "INTAKE_SOURCE",
+    "AgentCall",
     "AuditEvent",
     "AuditEventType",
     "BrainContext",
@@ -29,8 +31,11 @@ __all__ = [
     "HarnessMessage",
     "JudgmentEntry",
     "MessageType",
+    "Objective",
     "Result",
     "ResultStatus",
+    "Run",
+    "RunStatus",
     "Task",
     "TaskStatus",
 ]

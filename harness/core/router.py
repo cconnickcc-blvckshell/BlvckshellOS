@@ -1,82 +1,42 @@
 """The pipeline router — the conductor's baton.
 
-CKOS is the intelligence that decides *what* to do (decompose an idea into tasks
-and choose which brain handles each). The :class:`PipelineRouter` is the
-mechanism that *carries it out*: it dispatches tasks onto the bus, respects
-dependencies, collects results, and asks CKOS to synthesize the final output.
+The :class:`~harness.core.orchestrator.Orchestrator` decides *what* to do
+(decompose an objective into tasks and choose which brain handles each). The
+:class:`PipelineRouter` *carries it out*: it dispatches tasks onto the bus,
+respects dependencies, collects results, and asks the orchestrator to synthesize
+the final output.
 
-Each pipeline run gets a unique reply address (``pipeline:<context_id>``) so
-concurrent pipelines never cross wires when collecting results.
+Each run gets a unique reply address (``pipeline:<run_id>``) so concurrent runs
+never cross wires when collecting results. Every dispatched ``TASK`` message
+carries its full ancestry (``objective_id``, ``run_id``, ``task_id``) in
+metadata, so any brain can correctly parent a sub-agent it spawns.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+from datetime import UTC, datetime
 
 from harness.core.memory import SharedMemory
 from harness.core.message_bus import MessageBus
 from harness.core.observer import Observer
+from harness.core.orchestrator import Orchestrator
 from harness.logging_config import get_logger
 from harness.schemas.audit import AuditEventType
 from harness.schemas.message import HarnessMessage, MessageType
+from harness.schemas.objective import Objective, Run, RunStatus
 from harness.schemas.result import Result, ResultStatus
 from harness.schemas.task import Task, TaskStatus
 
 logger = get_logger("router")
 
 
-class Orchestrator(Protocol):
-    """The planning/synthesis contract the router needs from CKOS."""
-
-    async def plan(self, idea: str, context_id: str) -> list[Task]:
-        """Decompose an idea into routed, executable tasks."""
-        ...
-
-    async def synthesize(self, idea: str, results: list[Result], context_id: str) -> str:
-        """Aggregate brain results into a single coherent answer."""
-        ...
-
-
-def reply_address(context_id: str) -> str:
-    """Return the unique bus reply address for a pipeline run."""
-    return f"pipeline:{context_id}"
-
-
-@dataclass(slots=True)
-class PipelineRun:
-    """The outcome of a full pipeline run.
-
-    Attributes:
-        context_id: The pipeline run identifier.
-        idea: The original operator idea.
-        tasks: The tasks CKOS produced.
-        results: The results returned by brains.
-        output: The synthesized final answer.
-        status: Overall pipeline status.
-    """
-
-    context_id: str
-    idea: str
-    tasks: list[Task] = field(default_factory=list)
-    results: list[Result] = field(default_factory=list)
-    output: str = ""
-    status: str = "COMPLETED"
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable view of the run."""
-        return {
-            "context_id": self.context_id,
-            "idea": self.idea,
-            "status": self.status,
-            "output": self.output,
-            "tasks": [t.model_dump(mode="json") for t in self.tasks],
-            "results": [r.model_dump(mode="json") for r in self.results],
-        }
+def reply_address(run_id: str) -> str:
+    """Return the unique bus reply address for a run."""
+    return f"pipeline:{run_id}"
 
 
 class PipelineRouter:
-    """Dispatches CKOS's plan across brains and aggregates the results."""
+    """Dispatches the orchestrator's plan across brains and aggregates results."""
 
     def __init__(
         self,
@@ -91,9 +51,9 @@ class PipelineRouter:
 
         Args:
             bus: The message bus for dispatch and collection.
-            memory: Shared memory for storing pipeline state.
+            memory: Shared memory for storing run state.
             observer: Observer for pipeline audit events.
-            orchestrator: The CKOS planner/synthesizer.
+            orchestrator: The harness orchestrator (planner/synthesizer).
             result_timeout: Max seconds to wait for each result.
         """
         self._bus = bus
@@ -102,46 +62,51 @@ class PipelineRouter:
         self._orchestrator = orchestrator
         self._result_timeout = result_timeout
 
-    async def run(self, idea: str, context_id: str, *, source: str = "intake") -> PipelineRun:
-        """Run a full pipeline: plan, dispatch, collect, synthesize.
+    async def run(self, objective: Objective, *, source: str = "intake") -> Run:
+        """Run a full pipeline for an objective: plan, dispatch, collect, synthesize.
 
         Args:
-            idea: The operator's idea/intent.
-            context_id: The pipeline run identifier.
-            source: Who injected the idea (for audit).
+            objective: The operator's objective.
+            source: Who injected the objective (for audit).
 
         Returns:
-            A completed :class:`PipelineRun`.
+            A completed :class:`Run`.
         """
+        run = Run(objective_id=objective.objective_id)
         await self._observer.record(
             AuditEventType.PIPELINE_STARTED,
             source=source,
-            context_id=context_id,
-            message=idea[:200],
+            context_id=run.run_id,
+            message=objective.statement[:200],
+            data={"objective_id": objective.objective_id},
         )
-        await self._memory.remember(context_id, "idea", idea)
+        await self._memory.remember(run.run_id, "idea", objective.statement)
 
-        tasks = await self._orchestrator.plan(idea, context_id)
-        run = PipelineRun(context_id=context_id, idea=idea, tasks=tasks)
+        tasks = await self._orchestrator.plan(objective, run)
+        run.tasks = tasks
         if not tasks:
-            run.status = "NEEDS_OPERATOR"
-            run.output = "CKOS could not decompose this idea into tasks. Operator input needed."
+            run.status = RunStatus.NEEDS_OPERATOR
+            run.output = "Orchestrator could not decompose this objective into tasks."
             await self._finish(run, source)
             return run
 
         await self._memory.remember(
-            context_id, "plan", [t.model_dump(mode="json") for t in tasks]
+            run.run_id, "plan", [t.model_dump(mode="json") for t in tasks]
         )
-        results = await self._execute_waves(tasks, context_id)
+        results = await self._execute_waves(tasks, objective, run)
         run.results = results
+        run.output = await self._orchestrator.synthesize(objective, run, results)
 
-        run.output = await self._orchestrator.synthesize(idea, results, context_id)
         if any(r.status == ResultStatus.FAILURE for r in results):
-            run.status = "PARTIAL"
+            run.status = RunStatus.PARTIAL
+        else:
+            run.status = RunStatus.COMPLETED
         await self._finish(run, source)
         return run
 
-    async def _execute_waves(self, tasks: list[Task], context_id: str) -> list[Result]:
+    async def _execute_waves(
+        self, tasks: list[Task], objective: Objective, run: Run
+    ) -> list[Result]:
         """Run tasks in dependency-ordered waves, parallelizing each wave."""
         by_id = {t.id: t for t in tasks}
         completed: dict[str, Result] = {}
@@ -165,8 +130,10 @@ class PipelineRouter:
                     )
                 break
 
-            await self._dispatch_wave([by_id[tid] for tid in ready], completed, context_id)
-            collected = await self._collect(len(ready), context_id)
+            await self._dispatch_wave(
+                [by_id[tid] for tid in ready], completed, objective, run
+            )
+            collected = await self._collect(len(ready), run)
             for result in collected:
                 completed[result.task_id] = result
             remaining -= set(ready)
@@ -174,12 +141,13 @@ class PipelineRouter:
         return [completed[t.id] for t in tasks if t.id in completed]
 
     async def _dispatch_wave(
-        self, tasks: list[Task], completed: dict[str, Result], context_id: str
+        self, tasks: list[Task], completed: dict[str, Result], objective: Objective, run: Run
     ) -> None:
-        """Send each task in a wave to its assigned brain's queue."""
+        """Send each task in a wave to its assigned brain's queue with ancestry."""
         for task in tasks:
             task.status = TaskStatus.RUNNING
-            # Feed upstream results to dependent tasks as inputs.
+            task.run_id = run.run_id
+            task.objective_id = objective.objective_id
             if task.depends_on:
                 task.inputs = {
                     **task.inputs,
@@ -190,26 +158,31 @@ class PipelineRouter:
                     },
                 }
             message = HarnessMessage(
-                source=reply_address(context_id),
+                source=reply_address(run.run_id),
                 destination=task.assigned_brain or "harness",
                 message_type=MessageType.TASK,
                 priority=task.priority,
                 payload=task.model_dump(mode="json"),
-                context_id=context_id,
+                context_id=run.run_id,
+                metadata={
+                    "objective_id": objective.objective_id,
+                    "run_id": run.run_id,
+                    "task_id": task.id,
+                },
             )
             await self._bus.enqueue(message.destination, message)
             await self._bus.mirror_to_observer(message)
             await self._observer.record(
                 AuditEventType.MESSAGE_SENT,
                 source="harness",
-                context_id=context_id,
+                context_id=run.run_id,
                 message=f"TASK -> {message.destination}",
                 data={"task_id": task.id, "capability": task.capability},
             )
 
-    async def _collect(self, count: int, context_id: str) -> list[Result]:
-        """Collect ``count`` results from this pipeline's reply address."""
-        address = reply_address(context_id)
+    async def _collect(self, count: int, run: Run) -> list[Result]:
+        """Collect ``count`` results from this run's reply address."""
+        address = reply_address(run.run_id)
         results: list[Result] = []
         for _ in range(count):
             message = await self._bus.dequeue(address, timeout=self._result_timeout)
@@ -227,20 +200,21 @@ class PipelineRouter:
             await self._observer.record(
                 AuditEventType.MESSAGE_RECEIVED,
                 source="harness",
-                context_id=context_id,
+                context_id=run.run_id,
                 message=f"RESULT <- {message.source}",
             )
             results.append(Result.model_validate(message.payload))
         return results
 
-    async def _finish(self, run: PipelineRun, source: str) -> None:
+    async def _finish(self, run: Run, source: str) -> None:
         """Persist the final output and emit the completion audit event."""
-        await self._memory.remember(run.context_id, "output", run.output)
-        await self._memory.remember(run.context_id, "status", run.status)
+        run.completed_at = datetime.now(UTC)
+        await self._memory.remember(run.run_id, "output", run.output)
+        await self._memory.remember(run.run_id, "status", run.status.value)
         await self._observer.record(
             AuditEventType.PIPELINE_COMPLETED,
             source=source,
-            context_id=run.context_id,
+            context_id=run.run_id,
             message=run.output[:200],
-            data={"status": run.status, "task_count": len(run.tasks)},
+            data={"status": run.status.value, "task_count": len(run.tasks)},
         )

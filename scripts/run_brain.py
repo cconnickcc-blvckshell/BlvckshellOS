@@ -15,7 +15,6 @@ import asyncio
 import sys
 
 from brains._base.brain import BaseBrain, BrainRuntime
-from brains.ckos.brain import CKOSBrain
 from brains.examples.capital import CapitalBrain
 from brains.examples.commander import CommanderBrain
 from brains.examples.venture import VentureBrain
@@ -34,7 +33,6 @@ from harness.logging_config import configure_logging, get_logger
 logger = get_logger("run_brain")
 
 BRAINS: dict[str, type[BaseBrain]] = {
-    "ckos": CKOSBrain,
     "venture": VentureBrain,
     "commander": CommanderBrain,
     "capital": CapitalBrain,

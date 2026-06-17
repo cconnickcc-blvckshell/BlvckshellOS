@@ -23,6 +23,9 @@ class Settings(BaseSettings):
         use_in_memory_bus: Force the in-memory bus/memory backends (tests/offline).
         run_workers_in_process: Run specialist brains inside the harness process.
             Set false to run each brain in its own container against shared Redis.
+        worker_brain_modules: Comma-separated ``module:ClassName`` import paths
+            for the brains the harness loads in-process. Adding a brain is a
+            config change, not a code change.
         supabase_url: Supabase project URL for episodic memory and doctrine.
         supabase_key: Supabase service key.
         anthropic_api_key: Anthropic API key for Claude inference.
@@ -48,6 +51,14 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     use_in_memory_bus: bool = False
     run_workers_in_process: bool = True
+    worker_brain_modules: str = Field(
+        default=(
+            "brains.examples.venture:VentureBrain,"
+            "brains.examples.commander:CommanderBrain,"
+            "brains.examples.capital:CapitalBrain"
+        ),
+        description="Comma-separated module:ClassName paths for in-process brains.",
+    )
 
     supabase_url: str | None = None
     supabase_key: str | None = None
