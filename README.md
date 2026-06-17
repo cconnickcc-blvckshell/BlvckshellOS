@@ -39,32 +39,41 @@ curl -s -X POST http://localhost:8000/intake \
   -d '{"text":"I want to build a trading AI that outperforms the market","wait":true}' | jq .
 ```
 
-CKOS decomposes the idea, routes it to the Venture, Commander, and Capital
-brains, each executes and logs a judgment, and CKOS synthesizes a final briefing
-— with the Observer capturing the full trace.
+The orchestrator decomposes the idea, routes it to the Venture, Commander, and
+Capital brains, each executes and logs a judgment, and the orchestrator
+synthesizes a final briefing — with the Observer capturing the full trace.
 
 ## The test that proves it works
 
 ```bash
-poetry run pytest        # 60 tests, 89% coverage
+poetry run pytest        # 82 tests, ~90% coverage
 poetry run ruff check .  # lint
 ```
 
 `tests/test_pipeline_e2e.py` runs the canonical proof end to end: idea in →
-CKOS routes → brains execute → results back → judgments logged → coherent output
-out, with a full Observer trace. It also proves a failing brain never crashes the
-harness.
+orchestrator routes → brains execute → results back → judgments logged →
+coherent output out, with a full Observer trace under a correct Objective → Run →
+Task hierarchy. `tests/test_sub_agent.py` proves a brain can spawn a sub-agent
+and use its result; other suites prove dynamic loading and that a failing brain
+never crashes the harness.
 
 ## Architecture
 
 Six layers, composed by `harness/core/harness.py`:
 
 ```
-INTAKE  →  CKOS ROUTER  →  MESSAGE BUS  →  BRAIN REGISTRY  →  SHARED MEMORY  →  OBSERVER
+INTAKE  →  ORCHESTRATOR  →  MESSAGE BUS  →  BRAIN REGISTRY  →  SHARED MEMORY  →  OBSERVER
 ```
 
+Work is tracked through an explicit hierarchy: **Objective → Run → Task →
+AgentCall** (`harness/schemas/objective.py`).
+
 - **Message protocol** — `harness/schemas/` (`HarnessMessage`, `Task`, `Result`,
-  `JudgmentEntry`, …). Strict Pydantic v2; the foundation everything builds on.
+  `Objective`/`Run`/`AgentCall`, `JudgmentEntry`, …). Strict Pydantic v2.
+- **Orchestrator** — `harness/core/orchestrator.py`. The harness-internal routing
+  engine: decompose, route (only to registered capabilities), synthesize. **Not a
+  brain** — it never registers. (CKOS, a future intelligent brain *above* the
+  harness, is a separate thing.)
 - **Message bus** — `harness/core/message_bus.py`. Redis pub/sub + durable
   queues, with an in-memory implementation for tests/offline.
 - **Shared memory** — three tiers: working memory (Redis), Judgment Ledger and
@@ -72,16 +81,23 @@ INTAKE  →  CKOS ROUTER  →  MESSAGE BUS  →  BRAIN REGISTRY  →  SHARED MEM
 - **Registry** — `harness/core/registry.py`. Capability discovery + heartbeats.
 - **Observer** — `harness/core/observer.py`. Audits everything; live SSE stream.
 - **Agent loop** — `harness/core/agent_loop.py`. The think/act/observe cycle.
-- **CKOS** — `brains/ckos/`. The conductor: decompose, route, synthesize.
+- **Sub-agents** — `BaseBrain.spawn_agent(...)`. Any brain can spawn a child
+  agent for a capability, await it, and use the result.
 
-Deep dives: [`docs/architecture.md`](docs/architecture.md),
-[`docs/message_protocol.md`](docs/message_protocol.md),
-[`docs/brain_sdk.md`](docs/brain_sdk.md).
+Deep dives:
+[`docs/architecture.md`](docs/architecture.md) ·
+[`docs/workflows.md`](docs/workflows.md) (wireframes, sequence diagrams, API) ·
+[`docs/system_graph.md`](docs/system_graph.md) (full graph) ·
+[`docs/file_reference.md`](docs/file_reference.md) (file purposes & deps) ·
+[`docs/message_protocol.md`](docs/message_protocol.md) ·
+[`docs/brain_sdk.md`](docs/brain_sdk.md) ·
+[`docs/dev_handoff.md`](docs/dev_handoff.md).
 
 ## Adding a brain
 
-Extend `LLMBrain`, declare `capabilities` and a `system_prompt`, register it, and
-run. CKOS discovers and routes to it automatically. Full guide in
+Extend `LLMBrain`, declare `capabilities` and a `system_prompt`, then add its
+`module:ClassName` to `BLVCKSHELL_WORKER_BRAIN_MODULES` — no harness code change.
+The Orchestrator discovers and routes to it automatically. Full guide in
 [`docs/brain_sdk.md`](docs/brain_sdk.md).
 
 ## HTTP API
@@ -106,6 +122,7 @@ Nothing is hardcoded. Notable flags:
 - `BLVCKSHELL_USE_IN_MEMORY_BUS` — run without Redis.
 - `BLVCKSHELL_USE_FAKE_LLM` — deterministic offline inference.
 - `BLVCKSHELL_RUN_WORKERS_IN_PROCESS` — single-process vs. distributed brains.
+- `BLVCKSHELL_WORKER_BRAIN_MODULES` — which brains to load (`module:ClassName`).
 
 ## Persistence
 
@@ -125,12 +142,12 @@ Ledger, Doctrine, and the real-time Observer stream. See `frontend/README.md`.
 ## Project layout
 
 ```
-harness/     core engine (schemas, bus, router, registry, memory, observer, agent loop, API)
-brains/      _base contract + CKOS + example specialist brains
+harness/     core engine (schemas, orchestrator, router, bus, registry, memory, observer, agent loop, brain_loader, API)
+brains/      _base contract (incl. spawn_agent) + example specialist brains
 memory/      context store, judgment ledger, doctrine store
 intake/      text / voice / API intake
 frontend/    Next.js command interface
 docker/      Dockerfiles, compose, Supabase schema
 scripts/     run_brain, seed_db, register_brain
-docs/        architecture, message protocol, brain SDK
+docs/        architecture, workflows, system_graph, file_reference, message_protocol, brain_sdk, dev_handoff
 ```

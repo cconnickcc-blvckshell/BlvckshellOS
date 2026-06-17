@@ -49,9 +49,32 @@ carry a `Result` (`harness/schemas/result.py`).
 `task_id`, `brain_id`, `status` (`SUCCESS | FAILURE | NEEDS_OPERATOR`), `output`,
 `summary`, `error`, `judgment_ids`, `metrics`.
 
+## Ancestry metadata (Objective → Run → Task)
+
+Since the v1→v2 refactor, every dispatched `TASK` message carries its full
+ancestry in `metadata` so any receiver — including a brain about to spawn a
+sub-agent — knows where it sits in the tree:
+
+```python
+message.metadata = {
+    "objective_id": "...",   # the operator's intent
+    "run_id": "...",         # this execution attempt
+    "task_id": "...",        # this unit of work
+    # for sub-agent task messages, additionally:
+    "parent_task_id": "...",
+    "agent_call_id": "...",
+    "spawned_by": "<brain_id>",
+}
+```
+
+The `Task` payload itself also carries `run_id` and `objective_id`. The
+hierarchy schemas live in `harness/schemas/objective.py` (`Objective`, `Run`,
+`RunStatus`, `AgentCall`).
+
 ## Bus addressing conventions
 
 - A brain consumes the queue named by its `brain_id`.
-- A pipeline run collects results on the reply address `pipeline:<context_id>`,
-  so concurrent pipelines never cross wires.
+- A run collects results on the reply address `pipeline:<run_id>`, so concurrent
+  runs never cross wires.
+- A sub-agent call collects its result on `agent:<agent_call_id>`.
 - The Observer firehose channel mirrors every routed message for live viewing.

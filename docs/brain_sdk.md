@@ -71,8 +71,17 @@ lifecycle.
 
 ## Registering the brain
 
-**In-process (default):** add the class to `DEFAULT_WORKER_BRAINS` in
-`harness/core/harness.py`.
+Brains are declared in **configuration**, never in harness code.
+
+**In-process (default):** add the `module:ClassName` to
+`BLVCKSHELL_WORKER_BRAIN_MODULES` (in `.env` or `Settings`):
+
+```bash
+BLVCKSHELL_WORKER_BRAIN_MODULES="brains.examples.venture:VentureBrain,brains.research.brain:ResearchBrain"
+```
+
+`harness/core/brain_loader.py` imports each entry at startup. A bad entry is
+logged and skipped — it never stops the harness.
 
 **Distributed:** add the class to the `BRAINS` map in `scripts/run_brain.py`,
 set `BLVCKSHELL_RUN_WORKERS_IN_PROCESS=false` on the harness, and run the brain
@@ -82,8 +91,39 @@ in its own container:
 BRAIN_ID=research python -m scripts.run_brain research
 ```
 
-That's it. CKOS will discover the new capabilities through the registry and route
-to them automatically — it never routes to a capability that is not registered.
+That's it. The Orchestrator discovers the new capabilities through the registry
+and routes to them automatically — it never routes to a capability that is not
+registered.
+
+## Spawning sub-agents
+
+Any brain can spawn a child agent for a capability, await its result, and use it.
+`spawn_agent` is on `BaseBrain`, so every brain has it. The ancestry ids come
+from the incoming task message's `metadata`.
+
+```python
+async def handle_task(self, task):  # inside a brain
+    sub = await self.spawn_agent(
+        capability="market_analysis",
+        objective="Analyse options IV rank for SPY over the last 30 days",
+        inputs={"ticker": "SPY", "window_days": 30},
+        parent_task_id=task.payload["id"],
+        run_id=task.metadata["run_id"],
+        objective_id=task.metadata["objective_id"],
+        timeout=60.0,
+    )
+    if sub.status == TaskStatus.COMPLETED:
+        iv_analysis = sub.result
+    else:
+        iv_analysis = "Market analysis unavailable."  # sub.error has detail
+    ...
+```
+
+The sub-agent is dispatched over the bus to whatever brain is registered for the
+capability and runs through the full machinery (agent loop, judgment logging).
+A failed spawn returns an `AgentCall` with `status=FAILED` and `error` set — it
+never raises, so it cannot crash the parent brain or the harness. The Observer
+records `AGENT_SPAWNED` and `AGENT_RETURNED`.
 
 ## Logging judgments well
 
