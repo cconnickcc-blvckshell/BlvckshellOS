@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import {
+  formatApiError,
   getChatHistory,
   getChatSessions,
   OUTCOME_BADGE_STYLES,
@@ -77,8 +78,10 @@ function OutcomePrompt({
         lessons: [`operator rated: ${label}`],
       });
       onDone();
-    } catch {
+    } catch (err) {
       setSubmitting(false);
+      // Outcome recording is non-critical; surface briefly via console for debugging.
+      console.warn("Outcome recording failed:", formatApiError(err));
     }
   }
 
@@ -179,8 +182,8 @@ export function ChatPanel({ className = "" }: { className?: string }) {
         if (stored) {
           await loadSession(stored);
         }
-      } catch {
-        if (active) setError("Could not connect to harness.");
+      } catch (err) {
+        if (active) setError(formatApiError(err, "Could not connect to harness."));
       }
     }
 
@@ -264,9 +267,9 @@ export function ChatPanel({ className = "" }: { className?: string }) {
 
       const updatedSessions = await getChatSessions();
       setSessions(updatedSessions);
-    } catch {
+    } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== typingId && m.id !== optimisticId));
-      setError("Failed to send message. Is the harness running?");
+      setError(formatApiError(err, "Failed to send message. Is the harness running?"));
       setInput(text);
     } finally {
       setSending(false);
@@ -291,8 +294,8 @@ export function ChatPanel({ className = "" }: { className?: string }) {
     setDismissedOutcomes(new Set());
     try {
       await loadSession(sid);
-    } catch {
-      setError("Could not load session history.");
+    } catch (err) {
+      setError(formatApiError(err, "Could not load session history."));
     }
   }
 

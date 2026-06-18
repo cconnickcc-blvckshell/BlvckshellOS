@@ -106,9 +106,92 @@ export interface OutcomeRecord {
   lessons?: string[];
 }
 
+export interface ApiErrorBody {
+  code?: string;
+  message?: string;
+  detail?: string;
+  correlation_id?: string;
+  source?: string;
+  context_id?: string;
+}
+
+export class ApiError extends Error {
+  status: number;
+  code: string;
+  detail: string;
+  correlationId?: string;
+  path: string;
+
+  constructor(
+    path: string,
+    status: number,
+    body: ApiErrorBody | string | null,
+  ) {
+    const parsed = parseErrorBody(body);
+    const message =
+      parsed.detail || parsed.message || `Request to ${path} failed (${status})`;
+    super(message);
+    this.name = "ApiError";
+    this.path = path;
+    this.status = status;
+    this.code = parsed.code || `HTTP_${status}`;
+    this.detail = message;
+    this.correlationId = parsed.correlation_id;
+  }
+}
+
+function parseErrorBody(body: ApiErrorBody | string | null): ApiErrorBody {
+  if (!body) return {};
+  if (typeof body === "string") {
+    const trimmed = body.trim();
+    return trimmed ? { message: trimmed, detail: trimmed } : {};
+  }
+  const message = (body.message || body.detail || "").trim();
+  const detail = (body.detail || body.message || "").trim();
+  return {
+    ...body,
+    message: message || detail,
+    detail: detail || message,
+  };
+}
+
+export function formatApiError(err: unknown, fallback = "Request failed"): string {
+  if (err instanceof ApiError) {
+    const parts = [err.detail];
+    if (err.code && err.code !== `HTTP_${err.status}`) {
+      parts.push(`[${err.code}]`);
+    }
+    if (err.correlationId) {
+      parts.push(`(ref: ${err.correlationId.slice(0, 8)})`);
+    }
+    return parts.filter(Boolean).join(" ");
+  }
+  if (err instanceof Error && err.message.trim()) {
+    return err.message;
+  }
+  return fallback;
+}
+
+async function parseApiError(res: Response, path: string): Promise<ApiError> {
+  let body: ApiErrorBody | string | null = null;
+  try {
+    const text = await res.text();
+    if (text) {
+      try {
+        body = JSON.parse(text) as ApiErrorBody;
+      } catch {
+        body = text;
+      }
+    }
+  } catch {
+    body = null;
+  }
+  return new ApiError(path, res.status, body);
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${HARNESS_URL}${path}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  if (!res.ok) throw await parseApiError(res, path);
   return res.json() as Promise<T>;
 }
 
@@ -116,12 +199,13 @@ export async function sendChatMessage(
   message: string,
   sessionId?: string,
 ): Promise<ChatResponse> {
-  const res = await fetch(`${HARNESS_URL}/chat`, {
+  const path = "/chat";
+  const res = await fetch(`${HARNESS_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, session_id: sessionId }),
   });
-  if (!res.ok) throw new Error(`chat → ${res.status}`);
+  if (!res.ok) throw await parseApiError(res, path);
   return res.json() as Promise<ChatResponse>;
 }
 
@@ -137,12 +221,13 @@ export async function recordOutcome(
   judgmentId: string,
   outcome: OutcomeRecord,
 ): Promise<Judgment> {
-  const res = await fetch(`${HARNESS_URL}/judgments/${judgmentId}/outcome`, {
+  const path = `/judgments/${judgmentId}/outcome`;
+  const res = await fetch(`${HARNESS_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(outcome),
   });
-  if (!res.ok) throw new Error(`outcome → ${res.status}`);
+  if (!res.ok) throw await parseApiError(res, path);
   return res.json() as Promise<Judgment>;
 }
 
@@ -169,12 +254,13 @@ export const OUTCOME_BADGE_STYLES: Record<JudgmentOutcome, string> = {
 
 export const api = {
   submitIdea: async (text: string, wait = false) => {
-    const res = await fetch(`${HARNESS_URL}/intake`, {
+    const path = "/intake";
+    const res = await fetch(`${HARNESS_URL}${path}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text, wait }),
     });
-    if (!res.ok) throw new Error(`intake → ${res.status}`);
+    if (!res.ok) throw await parseApiError(res, path);
     return res.json();
   },
   brains: () => get<Brain[]>("/brains"),

@@ -19,6 +19,8 @@ from fastapi.responses import StreamingResponse
 from intake.api import create_intake_router
 from pydantic import BaseModel, Field
 
+from harness.api.errors import CorrelationIdMiddleware, register_error_handlers
+from harness.core.errors import HarnessError
 from harness.core.harness import Harness
 from harness.schemas.judgment import OutcomeRecord
 
@@ -35,7 +37,12 @@ class ChatRequest(BaseModel):
 def get_harness() -> Harness:
     """Return the live harness instance or raise if not initialized."""
     if _harness is None:
-        raise RuntimeError("harness not initialized")
+        raise HarnessError(
+            "Harness is not initialized",
+            code="HARNESS_NOT_READY",
+            source="api",
+            status_code=503,
+        )
     return _harness
 
 
@@ -66,6 +73,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(CorrelationIdMiddleware)
+    register_error_handlers(app)
     app.include_router(create_intake_router(get_harness))
 
     @app.post("/chat", tags=["chat"])
@@ -93,7 +102,10 @@ def create_app() -> FastAPI:
         """Record the real-world outcome for a judgment entry."""
         entry = await get_harness().memory.record_outcome(judgment_id, outcome)
         if entry is None:
-            raise HTTPException(status_code=404, detail="judgment not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Judgment '{judgment_id}' was not found in the ledger",
+            )
         return entry.model_dump(mode="json")
 
     @app.get("/health", tags=["system"])
@@ -123,7 +135,10 @@ def create_app() -> FastAPI:
         """Return the current state of a single pipeline run."""
         run = await get_harness().get_pipeline(pipeline_id)
         if run is None:
-            raise HTTPException(status_code=404, detail="pipeline not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Pipeline '{pipeline_id}' was not found",
+            )
         return run
 
     @app.get("/ledger", tags=["memory"])

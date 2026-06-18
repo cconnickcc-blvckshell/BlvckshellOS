@@ -121,12 +121,20 @@ class PipelineRouter:
             if not ready:
                 # Dependency cycle or unmet dependency: fail the stragglers.
                 for tid in remaining:
+                    error = "Unresolvable task dependency — check task depends_on graph"
+                    await self._observer.record(
+                        AuditEventType.ERROR,
+                        source="harness",
+                        context_id=run.run_id,
+                        message=error,
+                        data={"task_id": tid, "error_code": "dependency_not_satisfiable"},
+                    )
                     completed[tid] = Result(
                         task_id=tid,
                         brain_id="harness",
                         status=ResultStatus.FAILURE,
                         summary="Unresolvable task dependency.",
-                        error="dependency_not_satisfiable",
+                        error=error,
                     )
                 break
 
@@ -187,13 +195,23 @@ class PipelineRouter:
         for _ in range(count):
             message = await self._bus.dequeue(address, timeout=self._result_timeout)
             if message is None:
+                error = (
+                    f"Timed out after {self._result_timeout}s waiting for a brain result"
+                )
+                await self._observer.record(
+                    AuditEventType.ERROR,
+                    source="harness",
+                    context_id=run.run_id,
+                    message=error,
+                    data={"error_code": "result_timeout"},
+                )
                 results.append(
                     Result(
                         task_id="unknown",
                         brain_id="harness",
                         status=ResultStatus.FAILURE,
                         summary="Timed out waiting for a brain result.",
-                        error="result_timeout",
+                        error=error,
                     )
                 )
                 continue

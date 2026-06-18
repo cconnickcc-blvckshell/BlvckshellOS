@@ -20,6 +20,7 @@ from brains._base.tools import BaseTool
 from judgment.profile import ModelConfig
 
 from harness.config import Settings
+from harness.core.errors import format_exception, report_error
 from harness.core.llm import LLMClient, LLMResponse, OllamaClient
 from harness.core.observer import Observer
 from harness.schemas.audit import AuditEventType
@@ -151,26 +152,34 @@ class AgentLoop:
             if self._settings is not None:
                 base_url = self._settings.ollama_effective_url or base_url
             ollama = OllamaClient(base_url=base_url, default_model=cfg.preferred_model)
-            response = await ollama.complete(
-                system=system_prompt,
-                messages=messages,
-                tools=tool_schemas,
-                model_override=cfg.preferred_model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            try:
+                response = await ollama.complete(
+                    system=system_prompt,
+                    messages=messages,
+                    tools=tool_schemas,
+                    model_override=cfg.preferred_model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception as exc:
+                await self._report_llm_failure(brain_id, context_id, exc)
+                raise
         else:
-            response = await self._llm.complete(
-                system=system_prompt,
-                messages=messages,
-                tools=tool_schemas,
-                model=model,
-                model_override=model_override,
-                fallback_models=fallback_models,
-                provider_override=provider_override,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            try:
+                response = await self._llm.complete(
+                    system=system_prompt,
+                    messages=messages,
+                    tools=tool_schemas,
+                    model=model,
+                    model_override=model_override,
+                    fallback_models=fallback_models,
+                    provider_override=provider_override,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception as exc:
+                await self._report_llm_failure(brain_id, context_id, exc)
+                raise
 
         if self._observer is not None:
             await self._observer.record(
@@ -181,6 +190,21 @@ class AgentLoop:
                 data=response.metrics(),
             )
         return response
+
+    async def _report_llm_failure(
+        self, brain_id: str, context_id: str, exc: Exception
+    ) -> None:
+        if self._observer is None:
+            return
+        await report_error(
+            self._observer,
+            exc,
+            source=brain_id,
+            context_id=context_id,
+            code="LLM_CALL_FAILED",
+            message=f"LLM call failed: {format_exception(exc)}",
+            event_type=AuditEventType.ERROR,
+        )
 
     @staticmethod
     def _assistant_tool_message(response: LLMResponse) -> dict[str, Any]:

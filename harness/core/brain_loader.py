@@ -12,6 +12,7 @@ skipped so the harness always starts, even if one brain fails to load.
 from __future__ import annotations
 
 import importlib
+from typing import Any
 
 from brains._base.brain import BaseBrain, BrainRuntime
 
@@ -20,7 +21,7 @@ from harness.logging_config import get_logger
 logger = get_logger("brain_loader")
 
 
-def load_brain_classes(modules_str: str) -> list[type[BaseBrain]]:
+def load_brain_classes(modules_str: str) -> tuple[list[type[BaseBrain]], list[dict[str, Any]]]:
     """Import brain classes from a comma-separated ``module:ClassName`` string.
 
     Unknown or unimportable entries are logged and skipped — they never raise, so
@@ -34,9 +35,10 @@ def load_brain_classes(modules_str: str) -> list[type[BaseBrain]]:
         The successfully imported :class:`BaseBrain` subclasses, in order.
     """
     if not modules_str.strip():
-        return []
+        return [], []
 
     classes: list[type[BaseBrain]] = []
+    failures: list[dict[str, Any]] = []
     for raw_entry in modules_str.split(","):
         entry = raw_entry.strip()
         if not entry:
@@ -46,7 +48,15 @@ def load_brain_classes(modules_str: str) -> list[type[BaseBrain]]:
             module = importlib.import_module(module_path)
             cls = getattr(module, class_name)
         except Exception as exc:
-            logger.error("brain_loader_failed", entry=entry, error=str(exc))
+            error_message = str(exc).strip() or type(exc).__name__
+            logger.error("brain_loader_failed", entry=entry, error=error_message)
+            failures.append(
+                {
+                    "entry": entry,
+                    "error": error_message,
+                    "error_type": type(exc).__name__,
+                }
+            )
             continue
 
         if not (isinstance(cls, type) and issubclass(cls, BaseBrain)):
@@ -55,7 +65,7 @@ def load_brain_classes(modules_str: str) -> list[type[BaseBrain]]:
 
         classes.append(cls)
         logger.info("brain_loader_loaded", brain=class_name)
-    return classes
+    return classes, failures
 
 
 def instantiate_brains(

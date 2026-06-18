@@ -28,6 +28,7 @@ from harness.core.memory import SharedMemory
 from harness.core.message_bus import MessageBus
 from harness.core.observer import Observer
 from harness.core.registry import BrainRegistry
+from harness.core.errors import format_exception, report_error
 from harness.logging_config import get_logger
 from harness.schemas.audit import AuditEventType
 from harness.schemas.brain_info import BrainContext, BrainInfo, BrainState
@@ -308,15 +309,18 @@ class BaseBrain(abc.ABC):
                 data={"task_id": message.payload.get("id")},
             )
         except Exception as exc:
-            logger.error("brain_task_failed", brain=self.brain_id, error=str(exc))
-            await self.set_state(BrainState.ERROR)
-            await self.runtime.observer.record(
-                AuditEventType.TASK_FAILED,
+            error_message = format_exception(exc)
+            await report_error(
+                self.runtime.observer,
+                exc,
                 source=self.brain_id,
                 context_id=message.context_id,
-                message=str(exc),
-                data={"task_id": message.payload.get("id")},
+                code="TASK_FAILED",
+                message=error_message,
+                event_type=AuditEventType.TASK_FAILED,
+                data={"task_id": message.payload.get("id"), "brain_id": self.brain_id},
             )
+            await self.set_state(BrainState.ERROR)
             failure = self._failure_message(message, exc)
             await self.runtime.bus.enqueue(failure.destination, failure)
             await self.runtime.bus.mirror_to_observer(failure)
@@ -325,12 +329,13 @@ class BaseBrain(abc.ABC):
 
     def _failure_message(self, task: HarnessMessage, exc: Exception) -> HarnessMessage:
         """Build a RESULT message describing a failed task."""
+        error_message = format_exception(exc)
         result = Result(
             task_id=task.payload.get("id", task.id),
             brain_id=self.brain_id,
             status=ResultStatus.FAILURE,
-            summary="Task failed.",
-            error=str(exc),
+            summary=f"Task failed: {error_message}",
+            error=error_message,
         )
         return task.reply(
             source=self.brain_id,

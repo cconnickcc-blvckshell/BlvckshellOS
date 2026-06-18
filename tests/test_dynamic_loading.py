@@ -17,28 +17,31 @@ def _settings(modules: str) -> Settings:
 
 
 def test_load_brain_classes_parses_entries() -> None:
-    classes = load_brain_classes(
+    classes, failures = load_brain_classes(
         "brains.examples.venture:VentureBrain,brains.examples.commander:CommanderBrain"
     )
     assert [c.__name__ for c in classes] == ["VentureBrain", "CommanderBrain"]
+    assert failures == []
 
 
 def test_load_brain_classes_empty_string() -> None:
-    assert load_brain_classes("") == []
-    assert load_brain_classes("   ") == []
+    assert load_brain_classes("") == ([], [])
+    assert load_brain_classes("   ") == ([], [])
 
 
 def test_load_brain_classes_skips_bad_entries() -> None:
-    classes = load_brain_classes(
+    classes, failures = load_brain_classes(
         "does.not.exist:FakeBrain,brains.examples.venture:VentureBrain"
     )
     assert [c.__name__ for c in classes] == ["VentureBrain"]
+    assert len(failures) == 1
 
 
 def test_load_brain_classes_rejects_non_brain() -> None:
     # A real importable class that is not a BaseBrain must be skipped.
-    classes = load_brain_classes("harness.config:Settings")
+    classes, failures = load_brain_classes("harness.config:Settings")
     assert classes == []
+    assert failures == []
 
 
 async def test_dynamic_brain_loading_from_config() -> None:
@@ -66,6 +69,6 @@ async def test_unknown_brain_module_is_skipped_not_raised() -> None:
 
 def test_instantiate_brains_uses_shared_runtime() -> None:
     harness = Harness(settings=_settings("brains.examples.venture:VentureBrain"))
-    classes = load_brain_classes("brains.examples.venture:VentureBrain")
+    classes, _ = load_brain_classes("brains.examples.venture:VentureBrain")
     brains = instantiate_brains(classes, harness.runtime)
     assert brains[0].runtime is harness.runtime

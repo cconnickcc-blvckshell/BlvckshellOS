@@ -182,8 +182,13 @@ class Observer:
         )
         try:
             await self._store.append(event)
-        except Exception:
-            logger.error("audit_persist_failed", event_type=event_type.value, source=source)
+        except Exception as exc:
+            logger.exception(
+                "audit_persist_failed",
+                event_type=event_type.value,
+                source=source,
+                error=str(exc) or type(exc).__name__,
+            )
         logger.info(
             "audit_event",
             event_type=event_type.value,

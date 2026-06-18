@@ -24,6 +24,7 @@ from brains._base.brain import BaseBrain, BrainRuntime
 
 from harness.config import Settings, get_settings
 from harness.core.brain_loader import instantiate_brains, load_brain_classes
+from harness.core.errors import HarnessError, format_exception, report_error
 from harness.core.llm import build_llm_client
 from harness.core.memory import build_shared_memory
 from harness.core.message_bus import build_message_bus
@@ -36,6 +37,7 @@ from harness.core.orchestrator import Orchestrator
 from harness.core.registry import build_registry
 from harness.core.router import PipelineRouter
 from harness.logging_config import configure_logging, get_logger
+from harness.schemas.audit import AuditEventType
 from harness.schemas.message import HarnessMessage, MessageType
 from harness.schemas.objective import Objective, Run
 from harness.schemas.result import Result
@@ -82,8 +84,11 @@ class Harness:
             settings=self.settings,
         )
 
+        self._brain_load_failures: list[dict] = []
         # Dynamic brain loading — brains come from config, not hardcoded imports.
-        brain_classes = load_brain_classes(self.settings.worker_brain_modules)
+        brain_classes, self._brain_load_failures = load_brain_classes(
+            self.settings.worker_brain_modules
+        )
         self.workers: list[BaseBrain] = instantiate_brains(brain_classes, self.runtime)
 
         # The orchestrator is a harness-internal component, NOT a brain. It does
@@ -110,6 +115,14 @@ class Harness:
         await self.bus.connect()
         await self.registry.connect()
         await self.memory.connect()
+
+        for failure in self._brain_load_failures:
+            await self.observer.record(
+                AuditEventType.ERROR,
+                source="brain_loader",
+                message=f"Failed to load brain '{failure['entry']}': {failure['error']}",
+                data=failure,
+            )
 
         if self.settings.run_workers_in_process:
             for brain in self.workers:
@@ -156,10 +169,37 @@ class Harness:
         Returns:
             The created :class:`asyncio.Task`.
         """
-        task = asyncio.create_task(self.run_pipeline(statement, objective_id=objective_id))
+        task = asyncio.create_task(
+            self.run_pipeline(statement, objective_id=objective_id),
+            name=f"pipeline:{objective_id}",
+        )
         self._background.add(task)
-        task.add_done_callback(self._background.discard)
+
+        def _on_done(done: asyncio.Task[Run]) -> None:
+            self._background.discard(done)
+            if done.cancelled():
+                return
+            exc = done.exception()
+            if exc is None:
+                return
+            self._pipelines[objective_id]["status"] = "failed"
+            asyncio.create_task(self._handle_pipeline_failure(objective_id, exc))
+
+        task.add_done_callback(_on_done)
         return task
+
+    async def _handle_pipeline_failure(self, objective_id: str, exc: BaseException) -> None:
+        """Record a background pipeline failure to the Observer and logs."""
+        await report_error(
+            self.observer,
+            exc,
+            source="harness",
+            context_id=objective_id,
+            code="PIPELINE_FAILED",
+            message=f"Pipeline failed: {format_exception(exc)}",
+            event_type=AuditEventType.ERROR,
+            data={"pipeline_id": objective_id},
+        )
 
     def track_pipeline(self, objective_id: str, statement: str) -> None:
         """Register a pipeline so it appears in the live pipeline view.
@@ -261,12 +301,19 @@ class Harness:
 
         blvckbot = self.get_worker("blvckbot")
         if blvckbot is None:
-            raise RuntimeError("blvckbot brain is not loaded")
+            raise HarnessError(
+                "Blvckbot brain is not loaded — check BLVCKSHELL_WORKER_BRAIN_MODULES",
+                code="BRAIN_NOT_LOADED",
+                source="harness",
+                status_code=503,
+                data={"brain_id": "blvckbot"},
+            )
 
         sid = session_id or await self.memory.conversations.get_or_create_session("operator")
         await self.memory.conversations.append(sid, "operator", message, {"source": "chat_api"})
 
         run_id = f"chat-{sid}"
+        reply_to = f"chat-reply:{run_id}"
         task = Task(
             run_id=run_id,
             objective_id=run_id,
@@ -276,7 +323,7 @@ class Harness:
             inputs={"session_id": sid},
         )
         task_msg = HarnessMessage(
-            source="api:chat",
+            source=reply_to,
             destination="blvckbot",
             message_type=MessageType.TASK,
             payload=task.model_dump(mode="json"),
@@ -288,8 +335,50 @@ class Harness:
                 "task_id": task.id,
             },
         )
-        result_msg = await blvckbot.handle_task(task_msg)
+
+        try:
+            await blvckbot._process(task_msg)
+        except Exception as exc:
+            await report_error(
+                self.observer,
+                exc,
+                source="harness",
+                context_id=run_id,
+                code="CHAT_PROCESS_FAILED",
+                message=f"Chat processing failed: {format_exception(exc)}",
+                event_type=AuditEventType.TASK_FAILED,
+            )
+            raise HarnessError(
+                f"Chat processing failed: {format_exception(exc)}",
+                code="CHAT_PROCESS_FAILED",
+                source="harness",
+                context_id=run_id,
+                cause=exc,
+                status_code=500,
+            ) from exc
+
+        result_msg = await self.bus.dequeue(reply_to, timeout=5.0)
+        if result_msg is None:
+            raise HarnessError(
+                "Timed out waiting for Blvckbot response",
+                code="CHAT_TIMEOUT",
+                source="harness",
+                context_id=run_id,
+                status_code=504,
+            )
+
         result = Result.model_validate(result_msg.payload)
+        if not result.succeeded:
+            error_detail = result.error or result.summary or "Blvckbot returned a failure"
+            raise HarnessError(
+                error_detail,
+                code="CHAT_FAILED",
+                source="blvckbot",
+                context_id=run_id,
+                status_code=500,
+                data={"task_id": result.task_id},
+            )
+
         return {
             "response": result.output.get("response", result.summary),
             "session_id": sid,

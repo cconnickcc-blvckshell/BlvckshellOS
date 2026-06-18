@@ -6,14 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { BrainOrb, stateLabel } from "@/components/BrainOrb";
 import { JudgmentActivityFeed } from "@/components/JudgmentActivityFeed";
-import {
-  api,
-  connectObserverStream,
-  type AuditEvent,
-  type Brain,
-  type Judgment,
-  type Pipeline,
-} from "@/lib/api";
+import { api, connectObserverStream, formatApiError, type AuditEvent, type Brain, type Judgment, type Pipeline } from "@/lib/api";
 
 type Tab = "brains" | "ledger" | "doctrine" | "observer";
 
@@ -47,6 +40,7 @@ function BrainsTab() {
   const [brains, setBrains] = useState<Brain[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [activePipeline, setActivePipeline] = useState<Pipeline | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -56,13 +50,14 @@ function BrainsTab() {
         if (!active) return;
         setBrains(b);
         setPipelines(p);
+        setConnectionError(null);
         const latest = p[0];
         if (latest) {
           const detail = await api.pipeline(latest.pipeline_id).catch(() => latest);
           if (active) setActivePipeline(detail);
         }
-      } catch {
-        /* harness offline */
+      } catch (err) {
+        if (active) setConnectionError(formatApiError(err, "Harness unreachable"));
       }
     }
     poll();
@@ -75,6 +70,11 @@ function BrainsTab() {
 
   return (
     <div className="space-y-6">
+      {connectionError && (
+        <p className="rounded-lg border border-error/40 bg-error/10 px-3 py-2 font-mono text-xs text-error">
+          {connectionError}
+        </p>
+      )}
       <section>
         <h3 className="mb-3 font-mono text-[10px] uppercase tracking-widest text-text-secondary">
           Live brain states

@@ -3,12 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { api } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
 
 export default function IntakePage() {
   const router = useRouter();
   const [idea, setIdea] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
@@ -16,12 +17,14 @@ export default function IntakePage() {
     const text = idea.trim();
     if (!text) return;
     setStatus("sending");
+    setErrorMessage(null);
     try {
       const res = await api.submitIdea(text, false);
       setStatus("sent");
       setTimeout(() => router.push(`/pipelines?focus=${res.pipeline_id}`), 600);
-    } catch {
+    } catch (err) {
       setStatus("error");
+      setErrorMessage(formatApiError(err, "Could not reach the harness."));
     }
   }
 
@@ -32,6 +35,7 @@ export default function IntakePage() {
       null;
     if (!SR) {
       setStatus("error");
+      setErrorMessage("Voice input is not available in this browser.");
       return;
     }
     if (listening) {
@@ -105,7 +109,9 @@ export default function IntakePage() {
         <div className="mt-4 h-5 text-center font-mono text-xs">
           {status === "sent" && <span className="text-success">Got it, running.</span>}
           {status === "error" && (
-            <span className="text-error">Could not reach the harness or voice is unavailable.</span>
+            <span className="text-error">
+              {errorMessage || "Could not reach the harness or voice is unavailable."}
+            </span>
           )}
           {status === "idle" && (
             <span className="text-text-secondary">⌘/Ctrl + Enter to run</span>
