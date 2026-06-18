@@ -113,7 +113,7 @@ class Orchestrator:
         response = await self._llm.complete(
             system=ORCHESTRATOR_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
-            model=self._model,
+            model_override=self._model,
         )
         payload = _extract_json(response.text)
         if not payload or "tasks" not in payload:
@@ -190,7 +190,7 @@ class Orchestrator:
         response = await self._llm.complete(
             system=ORCHESTRATOR_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
-            model=self._model,
+            model_override=self._model,
         )
         synthesis = response.text.strip()
         if not synthesis or synthesis.startswith("[offline-analysis]"):

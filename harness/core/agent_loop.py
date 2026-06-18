@@ -17,23 +17,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from brains._base.tools import BaseTool
+from judgment.profile import ModelConfig
 
-from harness.core.llm import LLMClient, LLMResponse
+from harness.config import Settings
+from harness.core.llm import LLMClient, LLMResponse, OllamaClient
 from harness.core.observer import Observer
 from harness.schemas.audit import AuditEventType
 
 
 @dataclass(slots=True)
 class AgentLoopResult:
-    """The outcome of running the agent loop for one task.
-
-    Attributes:
-        final_text: The model's final natural-language answer.
-        iterations: How many think/act cycles ran.
-        tool_invocations: Record of each tool call and its result.
-        metrics: Aggregated token/cost/latency metrics.
-        transcript: The full message transcript for debugging.
-    """
+    """The outcome of running the agent loop for one task."""
 
     final_text: str = ""
     iterations: int = 0
@@ -52,19 +46,15 @@ class AgentLoop:
         tools: list[BaseTool] | None = None,
         observer: Observer | None = None,
         max_iterations: int = 6,
+        model_config: ModelConfig | None = None,
+        settings: Settings | None = None,
     ) -> None:
-        """Create the loop.
-
-        Args:
-            llm: The LLM client used for the THINK step.
-            tools: Tools available for the ACT step.
-            observer: Optional Observer for auditing calls.
-            max_iterations: Hard cap on cycles to prevent runaway loops.
-        """
         self._llm = llm
         self._tools = {tool.name: tool for tool in (tools or [])}
         self._observer = observer
         self._max_iterations = max_iterations
+        self._model_config = model_config
+        self._settings = settings
 
     async def run(
         self,
@@ -75,18 +65,7 @@ class AgentLoop:
         user_prompt: str,
         model: str | None = None,
     ) -> AgentLoopResult:
-        """Execute the loop until the model stops requesting tools.
-
-        Args:
-            brain_id: The owning brain (for audit attribution).
-            context_id: The pipeline run id (for audit correlation).
-            system_prompt: The system prompt for the brain.
-            user_prompt: The task framed as the first user message.
-            model: Optional model override.
-
-        Returns:
-            An :class:`AgentLoopResult` with the final text and full trace.
-        """
+        """Execute the loop until the model stops requesting tools."""
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_prompt}]
         tool_schemas = [tool.to_schema() for tool in self._tools.values()] or None
 
@@ -94,6 +73,8 @@ class AgentLoop:
         total_in = total_out = 0
         total_cost = 0.0
         total_latency = 0.0
+        last_model = "unknown"
+        last_provider = "unknown"
 
         for _ in range(self._max_iterations):
             result.iterations += 1
@@ -105,6 +86,8 @@ class AgentLoop:
                 tool_schemas=tool_schemas,
                 model=model,
             )
+            last_model = response.model
+            last_provider = response.provider
             total_in += response.input_tokens
             total_out += response.output_tokens
             total_cost += response.cost_usd
@@ -114,14 +97,12 @@ class AgentLoop:
                 result.final_text = response.text
                 break
 
-            # ACT: append the assistant's tool requests, then OBSERVE results.
             messages.append(self._assistant_tool_message(response))
             tool_results = await self._act(
                 brain_id=brain_id, context_id=context_id, response=response, result=result
             )
             messages.append({"role": "user", "content": tool_results})
         else:
-            # Loop exhausted without a final answer; surface the last text.
             result.final_text = result.final_text or "Reached iteration limit without completion."
 
         result.metrics = {
@@ -131,6 +112,9 @@ class AgentLoop:
             "latency_ms": round(total_latency, 2),
             "iterations": result.iterations,
             "tool_calls": len(result.tool_invocations),
+            "model_used": last_model,
+            "provider": last_provider,
+            "tokens": total_in + total_out,
         }
         result.transcript = messages
         return result
@@ -146,9 +130,48 @@ class AgentLoop:
         model: str | None,
     ) -> LLMResponse:
         """Perform one THINK step (a single LLM call) and audit it."""
-        response = await self._llm.complete(
-            system=system_prompt, messages=messages, tools=tool_schemas, model=model
-        )
+        cfg = self._model_config
+        model_override = None
+        fallback_models: list[str] | None = None
+        provider_override: str | None = None
+        temperature: float | None = None
+        max_tokens = 2048
+
+        if cfg is not None:
+            model_override = cfg.preferred_model
+            fallback_models = list(cfg.fallback_models)
+            provider_override = cfg.provider
+            temperature = cfg.temperature
+            max_tokens = cfg.max_tokens
+        elif model is not None:
+            model_override = model
+
+        if cfg is not None and cfg.local:
+            base_url = "http://localhost:11434"
+            if self._settings is not None:
+                base_url = self._settings.ollama_effective_url or base_url
+            ollama = OllamaClient(base_url=base_url, default_model=cfg.preferred_model)
+            response = await ollama.complete(
+                system=system_prompt,
+                messages=messages,
+                tools=tool_schemas,
+                model_override=cfg.preferred_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        else:
+            response = await self._llm.complete(
+                system=system_prompt,
+                messages=messages,
+                tools=tool_schemas,
+                model=model,
+                model_override=model_override,
+                fallback_models=fallback_models,
+                provider_override=provider_override,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
         if self._observer is not None:
             await self._observer.record(
                 AuditEventType.LLM_CALL,

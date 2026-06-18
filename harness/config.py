@@ -67,8 +67,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-3-5-sonnet-latest"
 
-    ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:14b"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o"
+
+    ollama_base_url: str | None = None
+    ollama_url: str | None = None
+    ollama_model: str = "qwen2.5:72b"
 
     use_fake_llm: bool = False
 
@@ -85,6 +89,21 @@ class Settings(BaseSettings):
     def anthropic_enabled(self) -> bool:
         """Whether the Anthropic API is configured."""
         return bool(self.anthropic_api_key) and not self.use_fake_llm
+
+    @property
+    def openai_enabled(self) -> bool:
+        """Whether the OpenAI API is configured."""
+        return bool(self.openai_api_key) and not self.use_fake_llm
+
+    @property
+    def ollama_effective_url(self) -> str | None:
+        """Resolved Ollama base URL (``ollama_base_url`` overrides ``ollama_url``)."""
+        return self.ollama_base_url or self.ollama_url
+
+    @property
+    def ollama_enabled(self) -> bool:
+        """Whether a local Ollama server URL is configured."""
+        return bool(self.ollama_effective_url) and not self.use_fake_llm
 
 
 @lru_cache(maxsize=1)

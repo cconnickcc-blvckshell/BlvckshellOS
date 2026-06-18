@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from judgment.profile import JudgmentProfile
+from judgment.profile import JudgmentProfile, ModelConfig
 
 from brains._base.brain import LLMBrain
 from brains._base.tools import FunctionTool
@@ -27,7 +27,15 @@ class VentureBrain(LLMBrain):
     name = "Venture Brain"
     description = "Validates the idea and assesses feasibility, market, and risk"
     capabilities = ["idea_validation", "feasibility_assessment", "market_analysis"]
-    judgment_profile = JudgmentProfile(domain="venture", harm_guard_enabled=False)
+    judgment_profile = JudgmentProfile(
+        domain="venture",
+        harm_guard_enabled=False,
+        model=ModelConfig(
+            preferred_model="claude-sonnet-4-6",
+            fallback_models=["gpt-4o"],
+            temperature=0.7,
+        ),
+    )
     system_prompt = (
         "You are the Venture Brain. You rigorously validate ideas: market reality, "
         "feasibility, competitive moat, and the top risks. Be skeptical but fair. "

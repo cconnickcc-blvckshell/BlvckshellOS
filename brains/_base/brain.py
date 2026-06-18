@@ -394,18 +394,25 @@ class LLMBrain(BaseBrain):
             tools=self.tools,
             observer=self.runtime.observer,
             max_iterations=self.max_iterations,
+            model_config=self.judgment_profile.model,
+            settings=self.runtime.settings,
         )
 
         run_context = LifecycleRunContext()
 
         async def gather_evidence():
             prompt = self.build_user_prompt(parsed, context) + run_context.evidence_prompt_suffix
+            legacy_model = (
+                None
+                if self.judgment_profile.model
+                else (self.model if self.model != "fake-llm" else None)
+            )
             return await loop.run(
                 brain_id=self.brain_id,
                 context_id=task.context_id,
                 system_prompt=self.system_prompt,
                 user_prompt=prompt,
-                model=self.model if self.model != "fake-llm" else None,
+                model=legacy_model,
             )
 
         lifecycle = JudgmentLifecycle()

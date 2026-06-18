@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from judgment.profile import JudgmentProfile
+from judgment.profile import JudgmentProfile, ModelConfig
 
 from brains._base.brain import LLMBrain
 
@@ -26,6 +26,11 @@ class CapitalBrain(LLMBrain):
         risk_cap=0.3,
         min_roi_signal=0.0,
         recall_depth=20,
+        model=ModelConfig(
+            preferred_model="claude-sonnet-4-6",
+            fallback_models=["gpt-4o", "qwen2.5:72b"],
+            temperature=0.3,
+        ),
     )
     system_prompt = (
         "You are the Capital Brain, currently a stub. Do not attempt deep financial "

@@ -13,7 +13,7 @@ from harness.schemas.result import Result
 from harness.schemas.task import Task
 from judgment.lifecycle import JudgmentLifecycle, build_ledger_entry, result_status_for_outcome
 from judgment.outcome import JudgmentOutcome
-from judgment.profile import JudgmentProfile
+from judgment.profile import JudgmentProfile, ModelConfig
 
 from brains._base.brain import BaseBrain
 
@@ -60,7 +60,15 @@ class BlvckbotBrain(BaseBrain):
     )
     capabilities = ["coordinate", "converse", "plan", "synthesize", "delegate"]
     pipeline_participant = False
-    judgment_profile = JudgmentProfile(domain="coordination", harm_guard_enabled=True)
+    judgment_profile = JudgmentProfile(
+        domain="coordination",
+        harm_guard_enabled=True,
+        model=ModelConfig(
+            preferred_model="claude-sonnet-4-6",
+            fallback_models=["gpt-4o", "qwen2.5:72b"],
+            temperature=0.7,
+        ),
+    )
     max_iterations = 4
 
     async def get_context(self, context_id: str) -> BrainContext:
@@ -91,15 +99,22 @@ class BlvckbotBrain(BaseBrain):
             tools=self.tools,
             observer=self.runtime.observer,
             max_iterations=self.max_iterations,
+            model_config=self.judgment_profile.model,
+            settings=self.runtime.settings,
         )
 
         async def gather_evidence():
+            legacy_model = (
+                None
+                if self.judgment_profile.model
+                else (self.model if self.model != "fake-llm" else None)
+            )
             return await loop.run(
                 brain_id=self.brain_id,
                 context_id=task.context_id,
                 system_prompt=BLVCKBOT_SYSTEM_PROMPT,
                 user_prompt=user_prompt,
-                model=self.model if self.model != "fake-llm" else None,
+                model=legacy_model,
             )
 
         lifecycle = JudgmentLifecycle()
