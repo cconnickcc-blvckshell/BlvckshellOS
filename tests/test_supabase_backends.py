@@ -12,7 +12,7 @@ from typing import Any
 
 from harness.core.observer import SupabaseAuditStore
 from harness.schemas.audit import AuditEvent, AuditEventType
-from harness.schemas.judgment import JudgmentEntry
+from harness.schemas.judgment import JudgmentEntry, OutcomeRecord
 from memory.doctrine_store import SupabaseDoctrineStore
 from memory.judgment_ledger import SupabaseJudgmentLedger
 
@@ -96,7 +96,9 @@ async def test_supabase_judgment_ledger_round_trip() -> None:
     fetched = await ledger.get(entry.id)
     assert fetched is not None and fetched.belief == "b"
 
-    updated = await ledger.record_outcome(entry.id, outcome="ok", was_correct=True)
+    updated = await ledger.record_outcome(
+        entry.id, OutcomeRecord(actual_outcome="ok", outcome_quality=0.9)
+    )
     assert updated is not None and updated.was_correct is True
 
     by_ctx = await ledger.list_for_context("c1")

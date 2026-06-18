@@ -12,9 +12,8 @@ implementation backs tests and offline runs.
 from __future__ import annotations
 
 import abc
-from datetime import UTC, datetime
 
-from harness.schemas.judgment import JudgmentEntry
+from harness.schemas.judgment import JudgmentEntry, OutcomeRecord
 
 
 class JudgmentLedger(abc.ABC):
@@ -51,14 +50,13 @@ class JudgmentLedger(abc.ABC):
         """Return the most recent entries, optionally filtered by brain."""
 
     async def record_outcome(
-        self, entry_id: str, *, outcome: str, was_correct: bool
+        self, entry_id: str, outcome_data: OutcomeRecord
     ) -> JudgmentEntry | None:
         """Record the real-world outcome of a previously logged belief.
 
         Args:
             entry_id: The judgment entry to update.
-            outcome: A description of what actually happened.
-            was_correct: Whether the original belief proved correct.
+            outcome_data: Structured outcome with quality score and lessons.
 
         Returns:
             The updated entry, or ``None`` if the entry does not exist.
@@ -66,11 +64,33 @@ class JudgmentLedger(abc.ABC):
         entry = await self.get(entry_id)
         if entry is None:
             return None
-        entry.outcome = outcome
-        entry.outcome_timestamp = datetime.now(UTC)
-        entry.was_correct = was_correct
-        entry.record_change("outcome_recorded", {"was_correct": was_correct})
+        entry.outcome = outcome_data.actual_outcome
+        entry.outcome_timestamp = outcome_data.recorded_at
+        entry.was_correct = outcome_data.outcome_quality >= 0.0
+        entry.record_change(
+            "outcome_recorded",
+            {
+                "outcome_quality": outcome_data.outcome_quality,
+                "missed_opportunity": outcome_data.missed_opportunity,
+                "lessons": outcome_data.lessons,
+            },
+        )
+        if outcome_data.outcome_quality <= -0.5:
+            entry.record_change(
+                "flagged_for_review",
+                {"outcome_quality": outcome_data.outcome_quality},
+            )
         return await self.update(entry)
+
+    async def get_recent_judgments(self, brain_id: str, limit: int = 50) -> list[JudgmentEntry]:
+        """Return recent judgments for a brain (newest first)."""
+        return await self.list_recent(brain_id=brain_id, limit=limit)
+
+    @abc.abstractmethod
+    async def list_by_belief_keyword(
+        self, belief_keyword: str, *, limit: int = 50
+    ) -> list[JudgmentEntry]:
+        """Return entries whose belief text contains the keyword."""
 
 
 class InMemoryJudgmentLedger(JudgmentLedger):
@@ -128,6 +148,20 @@ class InMemoryJudgmentLedger(JudgmentLedger):
             if len(result) >= limit:
                 break
         return result
+
+    async def list_by_belief_keyword(
+        self, belief_keyword: str, *, limit: int = 50
+    ) -> list[JudgmentEntry]:
+        """Return entries whose belief contains the keyword (case-insensitive)."""
+        needle = belief_keyword.lower()
+        hits: list[JudgmentEntry] = []
+        for eid in reversed(self._order):
+            entry = self._entries[eid]
+            if needle in entry.belief.lower():
+                hits.append(entry.model_copy(deep=True))
+                if len(hits) >= limit:
+                    break
+        return hits
 
 
 class SupabaseJudgmentLedger(JudgmentLedger):
@@ -212,3 +246,48 @@ class SupabaseJudgmentLedger(JudgmentLedger):
             query = query.eq("brain_id", brain_id)
         res = query.order("timestamp", desc=True).limit(limit).execute()
         return [self._from_row(r) for r in (res.data or [])]
+
+    async def list_by_belief_keyword(
+        self, belief_keyword: str, *, limit: int = 50
+    ) -> list[JudgmentEntry]:
+        """Return rows whose belief ilike-matches the keyword."""
+        res = (
+            self._require()
+            .table(self.TABLE)
+            .select("*")
+            .ilike("belief", f"%{belief_keyword}%")
+            .order("timestamp", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return [self._from_row(r) for r in (res.data or [])]
+
+    async def record_outcome(
+        self, entry_id: str, outcome_data: OutcomeRecord
+    ) -> JudgmentEntry | None:
+        """Update a row with structured outcome metadata."""
+        entry = await self.get(entry_id)
+        if entry is None:
+            return None
+        entry.outcome = outcome_data.actual_outcome
+        entry.outcome_timestamp = outcome_data.recorded_at
+        entry.was_correct = outcome_data.outcome_quality >= 0.0
+        entry.record_change(
+            "outcome_recorded",
+            {
+                "outcome_quality": outcome_data.outcome_quality,
+                "missed_opportunity": outcome_data.missed_opportunity,
+                "lessons": outcome_data.lessons,
+            },
+        )
+        if outcome_data.outcome_quality <= -0.5:
+            entry.record_change(
+                "flagged_for_review",
+                {"outcome_quality": outcome_data.outcome_quality},
+            )
+        row = self._to_row(entry)
+        row["outcome_data"] = outcome_data.model_dump(mode="json")
+        row["outcome_quality"] = outcome_data.outcome_quality
+        row["outcome_recorded_at"] = outcome_data.recorded_at.isoformat()
+        self._require().table(self.TABLE).upsert(row).execute()
+        return entry

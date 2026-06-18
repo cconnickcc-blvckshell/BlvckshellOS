@@ -80,7 +80,7 @@ class Orchestrator:
         Returns:
             A list of routed :class:`Task` objects (possibly empty).
         """
-        brains = await self._registry.list_all()
+        brains = [b for b in await self._registry.list_all() if b.pipeline_participant]
         if not brains:
             logger.warning("orchestrator_no_brains", run_id=run.run_id)
             return []

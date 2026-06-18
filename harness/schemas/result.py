@@ -10,6 +10,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
+from judgment.outcome import JudgmentOutcome
 from pydantic import BaseModel, Field
 
 
@@ -32,6 +33,8 @@ class Result(BaseModel):
         summary: A short human-readable summary of the outcome.
         error: Error detail when ``status`` is ``FAILURE``.
         judgment_ids: IDs of Judgment Ledger entries created during the task.
+        judgment_outcome: Four-outcome vocabulary from the judgment lifecycle.
+        stage_trace_id: Correlation id for Observer stage traces.
         metrics: Timing, tokens, cost, tool-call counts, etc.
     """
 
@@ -42,6 +45,8 @@ class Result(BaseModel):
     summary: str = ""
     error: str | None = None
     judgment_ids: list[str] = Field(default_factory=list)
+    judgment_outcome: JudgmentOutcome | None = None
+    stage_trace_id: str | None = None
     metrics: dict[str, Any] = Field(default_factory=dict)
 
     @property

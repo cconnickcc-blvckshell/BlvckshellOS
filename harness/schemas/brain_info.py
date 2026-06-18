@@ -44,11 +44,13 @@ class BrainInfo(BaseModel):
         state: Current live state.
         last_heartbeat: When the brain last reported healthy.
         registered_at: When the brain first registered.
+        pipeline_participant: Whether the orchestrator may route intake pipelines here.
     """
 
     brain_id: str
     name: str
     description: str
+    pipeline_participant: bool = True
     capabilities: list[str] = Field(default_factory=list)
     model: str = "unknown"
     tools: list[str] = Field(default_factory=list)

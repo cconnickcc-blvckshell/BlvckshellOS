@@ -40,7 +40,7 @@ def test_brains_registered(client: TestClient) -> None:
     assert resp.status_code == 200
     ids = {b["brain_id"] for b in resp.json()}
     # Worker brains register; the orchestrator (formerly "ckos") is not a brain.
-    assert {"venture", "commander", "capital"}.issubset(ids)
+    assert {"venture", "commander", "capital", "blvckbot"}.issubset(ids)
     assert "ckos" not in ids
     assert "orchestrator" not in ids
 

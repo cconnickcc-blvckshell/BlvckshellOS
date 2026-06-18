@@ -17,10 +17,19 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from intake.api import create_intake_router
+from pydantic import BaseModel, Field
 
 from harness.core.harness import Harness
+from harness.schemas.judgment import OutcomeRecord
 
 _harness: Harness | None = None
+
+
+class ChatRequest(BaseModel):
+    """POST /chat body."""
+
+    message: str = Field(min_length=1)
+    session_id: str | None = None
 
 
 def get_harness() -> Harness:
@@ -58,6 +67,34 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(create_intake_router(get_harness))
+
+    @app.post("/chat", tags=["chat"])
+    async def chat(chat_request: ChatRequest) -> dict[str, Any]:
+        """Send a message to Blvckbot and receive a coordinated response."""
+        return await get_harness().run_chat(
+            chat_request.message,
+            session_id=chat_request.session_id,
+        )
+
+    @app.get("/chat/history/{session_id}", tags=["chat"])
+    async def chat_history(session_id: str, limit: int = Query(default=50, ge=1, le=500)):
+        """Return conversation history for a session."""
+        entries = await get_harness().memory.conversations.get_history(session_id, limit=limit)
+        return [e.model_dump(mode="json") for e in entries]
+
+    @app.get("/chat/sessions", tags=["chat"])
+    async def chat_sessions(limit: int = Query(default=50, ge=1, le=200)):
+        """List recent chat sessions."""
+        sessions = await get_harness().memory.conversations.list_sessions(limit=limit)
+        return [s.model_dump(mode="json") for s in sessions]
+
+    @app.post("/judgments/{judgment_id}/outcome", tags=["memory"])
+    async def record_judgment_outcome(judgment_id: str, outcome: OutcomeRecord):
+        """Record the real-world outcome for a judgment entry."""
+        entry = await get_harness().memory.record_outcome(judgment_id, outcome)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="judgment not found")
+        return entry.model_dump(mode="json")
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, Any]:

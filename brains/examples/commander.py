@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from judgment.profile import JudgmentProfile
+
 from brains._base.brain import LLMBrain
 
 
@@ -12,6 +14,7 @@ class CommanderBrain(LLMBrain):
     name = "Commander Brain"
     description = "Builds the execution plan: milestones, sequencing, and first moves"
     capabilities = ["execution_planning", "milestone_planning", "resource_planning"]
+    judgment_profile = JudgmentProfile(domain="commander", harm_guard_enabled=False)
     system_prompt = (
         "You are the Commander Brain. You convert intent into action. Produce a "
         "crisp execution plan: phases, the critical path, concrete first moves for "

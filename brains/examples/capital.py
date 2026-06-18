@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from judgment.profile import JudgmentProfile
+
 from brains._base.brain import LLMBrain
 
 
@@ -18,6 +20,13 @@ class CapitalBrain(LLMBrain):
     description = "Flags the capital/financial dimension as a target domain (stub)"
     capabilities = ["capital_flagging", "financial_screening"]
     max_iterations = 1
+    judgment_profile = JudgmentProfile(
+        domain="capital",
+        harm_guard_enabled=True,
+        risk_cap=0.3,
+        min_roi_signal=0.0,
+        recall_depth=20,
+    )
     system_prompt = (
         "You are the Capital Brain, currently a stub. Do not attempt deep financial "
         "modeling. In 2-4 sentences, flag the capital/financial dimension of the "

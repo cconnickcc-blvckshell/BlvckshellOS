@@ -36,7 +36,10 @@ from harness.core.orchestrator import Orchestrator
 from harness.core.registry import build_registry
 from harness.core.router import PipelineRouter
 from harness.logging_config import configure_logging, get_logger
+from harness.schemas.message import HarnessMessage, MessageType
 from harness.schemas.objective import Objective, Run
+from harness.schemas.result import Result
+from harness.schemas.task import Task
 
 logger = get_logger("harness")
 
@@ -243,3 +246,54 @@ class Harness:
         self._runs[oid] = run
         self._pipelines[oid]["status"] = run.status.value
         return run
+
+    def get_worker(self, brain_id: str) -> BaseBrain | None:
+        """Return an in-process worker brain by id."""
+        for worker in self.workers:
+            if worker.brain_id == brain_id:
+                return worker
+        return None
+
+    async def run_chat(self, message: str, *, session_id: str | None = None) -> dict:
+        """Send a message to Blvckbot and return the synthesized response."""
+        if not self._started:
+            await self.startup()
+
+        blvckbot = self.get_worker("blvckbot")
+        if blvckbot is None:
+            raise RuntimeError("blvckbot brain is not loaded")
+
+        sid = session_id or await self.memory.conversations.get_or_create_session("operator")
+        await self.memory.conversations.append(sid, "operator", message, {"source": "chat_api"})
+
+        run_id = f"chat-{sid}"
+        task = Task(
+            run_id=run_id,
+            objective_id=run_id,
+            capability="converse",
+            objective=message,
+            assigned_brain="blvckbot",
+            inputs={"session_id": sid},
+        )
+        task_msg = HarnessMessage(
+            source="api:chat",
+            destination="blvckbot",
+            message_type=MessageType.TASK,
+            payload=task.model_dump(mode="json"),
+            context_id=run_id,
+            metadata={
+                "session_id": sid,
+                "run_id": run_id,
+                "objective_id": run_id,
+                "task_id": task.id,
+            },
+        )
+        result_msg = await blvckbot.handle_task(task_msg)
+        result = Result.model_validate(result_msg.payload)
+        return {
+            "response": result.output.get("response", result.summary),
+            "session_id": sid,
+            "judgment_outcome": result.judgment_outcome.value if result.judgment_outcome else None,
+            "actions_taken": result.output.get("actions_taken", []),
+            "judgment_ids": result.judgment_ids,
+        }

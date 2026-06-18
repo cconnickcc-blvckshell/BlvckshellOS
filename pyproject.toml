@@ -10,6 +10,7 @@ packages = [
     { include = "brains" },
     { include = "memory" },
     { include = "intake" },
+    { include = "judgment" },
 ]
 
 [tool.poetry.dependencies]
@@ -42,7 +43,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["harness", "brains", "memory", "intake"]
+src = ["harness", "brains", "memory", "intake", "judgment"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "C4", "SIM", "RUF"]
@@ -59,8 +60,8 @@ ignore = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["harness/tests", "brains", "memory", "intake", "tests"]
-addopts = "-ra -q --cov=harness --cov=brains --cov=memory --cov=intake --cov-report=term-missing"
+testpaths = ["harness/tests", "brains", "memory", "intake", "judgment", "tests"]
+addopts = "-ra -q --cov=harness --cov=brains --cov=memory --cov=intake --cov=judgment --cov-report=term-missing"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]

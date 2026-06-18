@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from memory.context_store import InMemoryContextStore
+from memory.conversation_store import InMemoryConversationStore
 from memory.doctrine_store import InMemoryDoctrineStore
 from memory.judgment_ledger import InMemoryJudgmentLedger
 
 from harness.core.memory import SharedMemory
-from harness.schemas.judgment import JudgmentEntry
+from harness.schemas.judgment import JudgmentEntry, OutcomeRecord
 
 
 def _memory() -> SharedMemory:
@@ -15,6 +16,7 @@ def _memory() -> SharedMemory:
         context_store=InMemoryContextStore(),
         ledger=InMemoryJudgmentLedger(),
         doctrine=InMemoryDoctrineStore(),
+        conversations=InMemoryConversationStore(),
     )
 
 
@@ -51,7 +53,9 @@ async def test_doctrine_promotion_requires_correct_and_confident() -> None:
     # Not yet correct -> not promotable.
     assert await mem.promote_to_doctrine(entry.id) is None
 
-    await mem.ledger.record_outcome(entry.id, outcome="worked", was_correct=True)
+    await mem.ledger.record_outcome(
+        entry.id, OutcomeRecord(actual_outcome="worked", outcome_quality=0.9)
+    )
     promoted = await mem.promote_to_doctrine(entry.id)
     assert promoted is not None
     assert promoted.doctrine_promoted is True
@@ -66,7 +70,9 @@ async def test_doctrine_promotion_rejects_low_confidence() -> None:
     entry = await mem.record_judgment(
         JudgmentEntry(brain_id="venture", context_id="c1", belief="low", confidence=0.5)
     )
-    await mem.ledger.record_outcome(entry.id, outcome="worked", was_correct=True)
+    await mem.ledger.record_outcome(
+        entry.id, OutcomeRecord(actual_outcome="worked", outcome_quality=0.9)
+    )
     assert await mem.promote_to_doctrine(entry.id) is None
 
 

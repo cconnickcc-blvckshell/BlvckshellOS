@@ -49,6 +49,10 @@ class DoctrineStore(abc.ABC):
     async def list_all(self, *, limit: int = 200) -> list[JudgmentEntry]:
         """Return all doctrine entries including retired ones, newest first."""
 
+    @abc.abstractmethod
+    async def update(self, entry: JudgmentEntry) -> JudgmentEntry:
+        """Persist changes to an existing doctrine entry."""
+
 
 class InMemoryDoctrineStore(DoctrineStore):
     """An in-process doctrine store for tests and offline operation."""
@@ -102,6 +106,13 @@ class InMemoryDoctrineStore(DoctrineStore):
         return [
             self._entries[eid].model_copy(deep=True) for eid in reversed(self._order[-limit:])
         ]
+
+    async def update(self, entry: JudgmentEntry) -> JudgmentEntry:
+        """Overwrite an existing doctrine entry."""
+        if entry.id not in self._entries:
+            raise KeyError(f"doctrine entry {entry.id} not found")
+        self._entries[entry.id] = entry.model_copy(deep=True)
+        return entry.model_copy(deep=True)
 
 
 class SupabaseDoctrineStore(DoctrineStore):
@@ -181,3 +192,8 @@ class SupabaseDoctrineStore(DoctrineStore):
             .execute()
         )
         return [JudgmentEntry.model_validate(r) for r in (res.data or [])]
+
+    async def update(self, entry: JudgmentEntry) -> JudgmentEntry:
+        """Upsert a doctrine row."""
+        self._require().table(self.TABLE).upsert(entry.model_dump(mode="json")).execute()
+        return entry

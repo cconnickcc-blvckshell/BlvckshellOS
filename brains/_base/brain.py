@@ -39,6 +39,9 @@ from harness.schemas.message import (
 from harness.schemas.objective import AgentCall
 from harness.schemas.result import Result, ResultStatus
 from harness.schemas.task import Task, TaskStatus
+from judgment.lifecycle import JudgmentLifecycle, build_ledger_entry, result_status_for_outcome
+from judgment.profile import JudgmentProfile
+from judgment.traces import LifecycleRunContext
 
 from brains._base.tools import BaseTool
 
@@ -78,6 +81,7 @@ class BaseBrain(abc.ABC):
     name: str = "Base Brain"
     description: str = "Abstract brain."
     capabilities: list[str] = []
+    pipeline_participant: bool = True
     model: str = "fake-llm"
     tools: list[BaseTool] = []
 
@@ -112,6 +116,7 @@ class BaseBrain(abc.ABC):
             brain_id=self.brain_id,
             name=self.name,
             description=self.description,
+            pipeline_participant=self.pipeline_participant,
             capabilities=list(self.capabilities),
             model=self.model,
             tools=[t.name for t in self.tools],
@@ -348,6 +353,7 @@ class LLMBrain(BaseBrain):
 
     system_prompt: str = "You are a specialist brain in the Blvckshell harness."
     max_iterations: int = 6
+    judgment_profile: JudgmentProfile = JudgmentProfile()
 
     async def get_context(self, context_id: str) -> BrainContext:
         """Load this brain's working context from shared memory."""
@@ -378,7 +384,7 @@ class LLMBrain(BaseBrain):
         )
 
     async def handle_task(self, task: HarnessMessage) -> HarnessMessage:
-        """Run the agent loop for a task and emit a structured result."""
+        """Run the judgment lifecycle for a task and emit a structured result."""
         parsed = Task.model_validate(task.payload)
         context = await self.get_context(task.context_id)
         await self.set_state(BrainState.EXECUTING)
@@ -389,41 +395,62 @@ class LLMBrain(BaseBrain):
             observer=self.runtime.observer,
             max_iterations=self.max_iterations,
         )
-        outcome = await loop.run(
+
+        run_context = LifecycleRunContext()
+
+        async def gather_evidence():
+            prompt = self.build_user_prompt(parsed, context) + run_context.evidence_prompt_suffix
+            return await loop.run(
+                brain_id=self.brain_id,
+                context_id=task.context_id,
+                system_prompt=self.system_prompt,
+                user_prompt=prompt,
+                model=self.model if self.model != "fake-llm" else None,
+            )
+
+        lifecycle = JudgmentLifecycle()
+        cycle = await lifecycle.run(
             brain_id=self.brain_id,
             context_id=task.context_id,
-            system_prompt=self.system_prompt,
-            user_prompt=self.build_user_prompt(parsed, context),
-            model=self.model if self.model != "fake-llm" else None,
+            task=parsed,
+            context=context,
+            profile=self.judgment_profile,
+            gather_evidence=gather_evidence,
+            observer=self.runtime.observer,
+            memory=self.runtime.memory,
+            run_context=run_context,
         )
 
-        judgment = JudgmentEntry(
+        judgment = build_ledger_entry(
             brain_id=self.brain_id,
             context_id=task.context_id,
-            belief=outcome.final_text[:500] or "Completed task.",
-            confidence=0.7,
-            evidence=[f"tool:{inv['tool']}" for inv in outcome.tool_invocations],
-            assumptions=["LLM reasoning over provided inputs and doctrine."],
+            lifecycle=cycle,
         )
         await self.log_judgment(judgment)
 
         result = Result(
             task_id=parsed.id,
             brain_id=self.brain_id,
-            status=ResultStatus.SUCCESS,
-            output={"analysis": outcome.final_text},
-            summary=outcome.final_text[:280],
+            status=result_status_for_outcome(cycle.outcome),
+            output={"analysis": cycle.raw_analysis, "judgment_outcome": cycle.outcome.value},
+            summary=cycle.belief[:280],
             judgment_ids=[judgment.id],
-            metrics=outcome.metrics,
+            judgment_outcome=cycle.outcome,
+            stage_trace_id=cycle.trace_id,
+            metrics=cycle.agent_metrics,
         )
         await self.runtime.memory.append_working(
             task.context_id,
             "history",
-            {"brain": self.brain_id, "summary": result.summary},
+            {
+                "brain": self.brain_id,
+                "summary": result.summary,
+                "judgment_outcome": cycle.outcome.value,
+            },
         )
         return task.reply(
             source=self.brain_id,
             message_type=MessageType.RESULT,
             payload=result.model_dump(mode="json"),
-            metadata=outcome.metrics,
+            metadata=cycle.agent_metrics,
         )

@@ -71,3 +71,13 @@ class JudgmentEntry(BaseModel):
                 "details": details or {},
             }
         )
+
+
+class OutcomeRecord(BaseModel):
+    """Real-world outcome attached to a judgment entry — extends ledger via changelog."""
+
+    actual_outcome: str
+    outcome_quality: float = Field(ge=-1.0, le=1.0)
+    missed_opportunity: str | None = None
+    lessons: list[str] = Field(default_factory=list)
+    recorded_at: datetime = Field(default_factory=_now)

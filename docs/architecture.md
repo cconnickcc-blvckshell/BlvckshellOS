@@ -118,9 +118,43 @@ See [`workflows.md`](workflows.md) for the spawn sequence diagram.
 | Working memory  | Redis (hash, TTL 24h)    | per run         | `memory/context_store.py`  |
 | Episodic memory | Supabase (`judgment_ledger`) | permanent   | `memory/judgment_ledger.py`|
 | Doctrine        | Supabase (`doctrine`)    | append-only     | `memory/doctrine_store.py` |
+| Conversations   | Supabase / in-memory     | per session     | `memory/conversation_store.py` |
 
 A correct, high-confidence belief (≥ 0.8) is eligible for promotion from the
-ledger to doctrine via `SharedMemory.promote_to_doctrine`.
+ledger to doctrine via `SharedMemory.promote_to_doctrine`. Outcome capture closes
+the learning loop: `POST /judgments/{id}/outcome` → belief update → doctrine
+promotion or penalty.
+
+## Judgment lifecycle (Phase 1 + 1b)
+
+Every `LLMBrain` runs the nine-stage judgment cycle in `judgment/lifecycle.py`
+before writing to the ledger. Models supply **evidence**, not decisions.
+
+```
+OBSERVATION → BELIEF → CONFIDENCE → CHALLENGE → EVIDENCE → FORECAST → DECISION → OUTCOME → LEARNING
+                  ↑ case retrieval      ↑ J9           ↑ agent loop  ↑ J11 exploration
+```
+
+| Stage        | Module                              | Purpose                                      |
+|--------------|-------------------------------------|----------------------------------------------|
+| Confidence   | `judgment/stages/confidence.py`     | Doctrine + ledger outcome adjustment (J9)    |
+| Exploration  | `judgment/stages/exploration.py`    | UCB bandit + opportunity cost signal (J11)   |
+| Case recall  | `judgment/reasoning/case_retrieval.py` | Keyword lesson recall into Evidence (J12) |
+| Learning     | `judgment/stages/learning.py`       | Post-outcome Bayesian belief update (J10)    |
+
+Guards (authoritative, not observational):
+
+- **Harm-aware** (`judgment/guards/harm_aware.py`) — capital domain; blocks
+  `HOLD→PROCEED`, negative ROI, risk above cap, poor similar past outcomes.
+- **Safe divergence** (`judgment/guards/safe_divergence.py`) — tension classes;
+  allowlists `PROCEED→STAGED_PROCEED` and `STAGED_PROCEED→REQUEST_MORE_EVIDENCE`.
+
+Every stage emits `consumed_signals` / `ignored_signals` to the Observer
+(`JUDGMENT_STAGE_COMPLETED`). Algorithms must pass federation promotion gates in
+`tests/simulation/` before promotion (divergence 10–30%, ROI Δ ≥ 1%, harm = 0).
+
+See [`v2_incorporation_audit.md`](v2_incorporation_audit.md) for the full
+incorporation tracker and [`archive/`](archive/) for read-only V1 reference docs.
 
 ## Deployment topologies
 

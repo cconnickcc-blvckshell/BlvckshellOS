@@ -10,8 +10,8 @@ async def test_brain_can_spawn_sub_agent(harness: Harness) -> None:
     """A brain can spawn a sub-agent and receive its result."""
     spawned_calls = []
 
-    parent = harness.workers[0]
-    child = harness.workers[1]
+    parent = next(b for b in harness.workers if b.brain_id == "commander")
+    child = next(b for b in harness.workers if b.brain_id == "venture")
     original_handle = parent.handle_task
 
     async def handle_with_spawn(task_msg):
@@ -37,8 +37,8 @@ async def test_brain_can_spawn_sub_agent(harness: Harness) -> None:
 
 async def test_sub_agent_events_are_recorded(harness: Harness) -> None:
     """Observer records AGENT_SPAWNED and AGENT_RETURNED on a successful spawn."""
-    parent = harness.workers[0]
-    child = harness.workers[1]
+    parent = next(b for b in harness.workers if b.brain_id == "commander")
+    child = next(b for b in harness.workers if b.brain_id == "venture")
     original_handle = parent.handle_task
 
     async def handle_with_spawn(task_msg):
@@ -63,7 +63,7 @@ async def test_sub_agent_events_are_recorded(harness: Harness) -> None:
 
 async def test_spawn_agent_fails_gracefully_on_unknown_capability(harness: Harness) -> None:
     """spawn_agent returns FAILED status when no brain handles the capability."""
-    brain = harness.workers[0]
+    brain = next(b for b in harness.workers if b.brain_id == "commander")
     call = await brain.spawn_agent(
         capability="capability_that_does_not_exist",
         objective="This should fail gracefully",

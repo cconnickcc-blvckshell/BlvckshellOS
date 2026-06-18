@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     run_workers_in_process: bool = True
     worker_brain_modules: str = Field(
         default=(
+            "brains.blvckbot.brain:BlvckbotBrain,"
             "brains.examples.venture:VentureBrain,"
             "brains.examples.commander:CommanderBrain,"
             "brains.examples.capital:CapitalBrain"

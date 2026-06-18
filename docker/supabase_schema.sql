@@ -69,3 +69,24 @@ create table if not exists audit_log (
 create index if not exists idx_audit_context on audit_log (context_id);
 create index if not exists idx_audit_time    on audit_log (timestamp desc);
 create index if not exists idx_audit_type    on audit_log (event_type);
+
+-- Outcome capture extensions (OutcomeRecord metadata mirrors changelog + query columns)
+alter table judgment_ledger add column if not exists outcome_data jsonb;
+alter table judgment_ledger add column if not exists outcome_quality float;
+alter table judgment_ledger add column if not exists outcome_recorded_at timestamptz;
+
+-- ============================================================================
+-- Conversations: persistent Blvckbot operator dialogue
+-- ============================================================================
+create table if not exists conversations (
+    id          uuid primary key,
+    session_id  text        not null,
+    role        text        not null,
+    brain_id    text,
+    content     text        not null,
+    metadata    jsonb       not null default '{}'::jsonb,
+    created_at  timestamptz not null default now()
+);
+
+create index if not exists conversations_session_idx on conversations (session_id);
+create index if not exists conversations_created_idx on conversations (created_at desc);
