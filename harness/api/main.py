@@ -20,6 +20,7 @@ from intake.api import create_intake_router
 from pydantic import BaseModel, Field
 
 from harness.api.errors import CorrelationIdMiddleware, register_error_handlers
+from harness.config import get_settings
 from harness.core.errors import HarnessError
 from harness.core.harness import Harness
 from harness.schemas.judgment import OutcomeRecord
@@ -61,6 +62,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Construct and configure the harness FastAPI application."""
+    settings = get_settings()
+    allowed_origins = ["http://localhost:3000", "http://localhost:8000"]
+    if settings.frontend_url:
+        allowed_origins.append(settings.frontend_url.rstrip("/"))
+
     app = FastAPI(
         title="Blvckshell Harness",
         description="The nervous system of an autonomous organization.",
@@ -69,7 +75,8 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allowed_origins if settings.frontend_url else ["*"],
+        allow_credentials=bool(settings.frontend_url),
         allow_methods=["*"],
         allow_headers=["*"],
     )

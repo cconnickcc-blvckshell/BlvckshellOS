@@ -104,3 +104,25 @@ def test_observer_events_endpoint(client: TestClient) -> None:
     events = client.get("/observer/events")
     assert events.status_code == 200
     assert len(events.json()) >= 1
+
+
+def test_cors_restricted_when_frontend_url_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BLVCKSHELL_USE_IN_MEMORY_BUS", "true")
+    monkeypatch.setenv("BLVCKSHELL_USE_FAKE_LLM", "true")
+    monkeypatch.setenv("BLVCKSHELL_LOG_LEVEL", "WARNING")
+    monkeypatch.setenv("BLVCKSHELL_FRONTEND_URL", "https://blvckshell.vercel.app")
+    get_settings.cache_clear()
+
+    from harness.api.main import create_app
+
+    with TestClient(create_app()) as cors_client:
+        resp = cors_client.options(
+            "/health",
+            headers={
+                "Origin": "https://blvckshell.vercel.app",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert resp.headers.get("access-control-allow-origin") == "https://blvckshell.vercel.app"
+
+    get_settings.cache_clear()

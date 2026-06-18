@@ -36,6 +36,7 @@ class Settings(BaseSettings):
         working_memory_ttl_seconds: TTL for Redis working memory entries.
         heartbeat_interval_seconds: How often brains report a heartbeat.
         heartbeat_timeout_seconds: After this with no heartbeat a brain is stale.
+        frontend_url: Public frontend URL for CORS (production Vercel deployment).
     """
 
     model_config = SettingsConfigDict(
@@ -79,6 +80,8 @@ class Settings(BaseSettings):
     working_memory_ttl_seconds: int = Field(default=86_400, ge=1)
     heartbeat_interval_seconds: int = Field(default=15, ge=1)
     heartbeat_timeout_seconds: int = Field(default=45, ge=1)
+
+    frontend_url: str | None = None
 
     @property
     def supabase_enabled(self) -> bool:

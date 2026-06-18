@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: blvckshell-harness
+    env: python
+    buildCommand: pip install poetry && poetry install --no-interaction --no-ansi --extras openai
+    startCommand: uvicorn harness.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: BLVCKSHELL_ENVIRONMENT
+        value: production
+      - key: BLVCKSHELL_REDIS_URL
+        fromService:
+          name: blvckshell-redis
+          type: redis
+          property: connectionString
+      - key: BLVCKSHELL_SUPABASE_URL
+        sync: false
+      - key: BLVCKSHELL_SUPABASE_KEY
+        sync: false
+      - key: BLVCKSHELL_ANTHROPIC_API_KEY
+        sync: false
+      - key: BLVCKSHELL_OPENAI_API_KEY
+        sync: false
+      - key: BLVCKSHELL_ANTHROPIC_MODEL
+        value: claude-sonnet-4-6
+      - key: BLVCKSHELL_FRONTEND_URL
+        sync: false
+      - key: BLVCKSHELL_USE_IN_MEMORY_BUS
+        value: false
+      - key: BLVCKSHELL_USE_FAKE_LLM
+        value: false
+      - key: BLVCKSHELL_RUN_WORKERS_IN_PROCESS
+        value: true
+      - key: BLVCKSHELL_WORKER_BRAIN_MODULES
+        value: "brains.blvckbot.brain:BlvckbotBrain,brains.examples.venture:VentureBrain,brains.examples.commander:CommanderBrain,brains.examples.capital:CapitalBrain"
+
+  - type: redis
+    name: blvckshell-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
