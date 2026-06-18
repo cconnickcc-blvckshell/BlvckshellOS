@@ -58,7 +58,7 @@ export default function ObserverPage() {
   }, []);
 
   return (
-    <div className="p-8">
+    <div className="h-full overflow-y-auto p-8">
       <PageHeader
         title="Observer"
         subtitle="Every event in the harness. The flight recorder."

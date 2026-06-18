@@ -10,6 +10,12 @@ export type BrainState =
   | "ERROR"
   | "OFFLINE";
 
+export type JudgmentOutcome =
+  | "PROCEED"
+  | "STAGED_PROCEED"
+  | "REQUEST_MORE_EVIDENCE"
+  | "HOLD";
+
 export interface Brain {
   brain_id: string;
   name: string;
@@ -18,6 +24,7 @@ export interface Brain {
   model: string;
   tools: string[];
   state: BrainState;
+  pipeline_participant?: boolean;
 }
 
 export interface Pipeline {
@@ -51,11 +58,114 @@ export interface AuditEvent {
   data: Record<string, unknown>;
 }
 
+export interface ChatMessage {
+  id: string;
+  session_id: string;
+  role: string;
+  brain_id?: string | null;
+  content: string;
+  metadata?: {
+    judgment_outcome?: JudgmentOutcome;
+    judgment_id?: string;
+    judgment_ids?: string[];
+    actions_taken?: Array<{
+      capability: string;
+      objective?: string;
+      status?: string;
+      result?: string;
+    }>;
+    source?: string;
+  };
+  created_at: string;
+}
+
+export interface ChatSession {
+  session_id: string;
+  operator_id: string;
+  created_at: string;
+  message_count: number;
+}
+
+export interface ChatResponse {
+  response: string;
+  session_id: string;
+  judgment_outcome: JudgmentOutcome | null;
+  actions_taken: Array<{
+    capability: string;
+    objective?: string;
+    status?: string;
+    result?: string;
+  }>;
+  judgment_ids: string[];
+}
+
+export interface OutcomeRecord {
+  actual_outcome: string;
+  outcome_quality: number;
+  missed_opportunity?: string | null;
+  lessons?: string[];
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${HARNESS_URL}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`${path} → ${res.status}`);
   return res.json() as Promise<T>;
 }
+
+export async function sendChatMessage(
+  message: string,
+  sessionId?: string,
+): Promise<ChatResponse> {
+  const res = await fetch(`${HARNESS_URL}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, session_id: sessionId }),
+  });
+  if (!res.ok) throw new Error(`chat → ${res.status}`);
+  return res.json() as Promise<ChatResponse>;
+}
+
+export async function getChatHistory(sessionId: string): Promise<ChatMessage[]> {
+  return get<ChatMessage[]>(`/chat/history/${sessionId}`);
+}
+
+export async function getChatSessions(): Promise<ChatSession[]> {
+  return get<ChatSession[]>("/chat/sessions");
+}
+
+export async function recordOutcome(
+  judgmentId: string,
+  outcome: OutcomeRecord,
+): Promise<Judgment> {
+  const res = await fetch(`${HARNESS_URL}/judgments/${judgmentId}/outcome`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(outcome),
+  });
+  if (!res.ok) throw new Error(`outcome → ${res.status}`);
+  return res.json() as Promise<Judgment>;
+}
+
+export function connectObserverStream(
+  onEvent: (event: AuditEvent) => void,
+): EventSource {
+  const es = new EventSource(`${HARNESS_URL}/observer/stream`);
+  es.onmessage = (e) => {
+    try {
+      onEvent(JSON.parse(e.data) as AuditEvent);
+    } catch {
+      /* ignore malformed frames */
+    }
+  };
+  return es;
+}
+
+export const OUTCOME_BADGE_STYLES: Record<JudgmentOutcome, string> = {
+  PROCEED: "border-success/40 bg-success/10 text-success",
+  STAGED_PROCEED: "border-warning/40 bg-warning/10 text-warning",
+  REQUEST_MORE_EVIDENCE: "border-blue-400/40 bg-blue-400/10 text-blue-400",
+  HOLD: "border-error/40 bg-error/10 text-error",
+};
 
 export const api = {
   submitIdea: async (text: string, wait = false) => {
@@ -75,4 +185,9 @@ export const api = {
   doctrine: () => get<Judgment[]>("/doctrine"),
   events: () => get<AuditEvent[]>("/observer/events"),
   streamUrl: () => `${HARNESS_URL}/observer/stream`,
+  sendChatMessage,
+  getChatHistory,
+  getChatSessions,
+  recordOutcome,
+  connectObserverStream,
 };

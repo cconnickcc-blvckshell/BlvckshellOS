@@ -42,7 +42,7 @@ export default function LedgerPage() {
   );
 
   return (
-    <div className="p-8">
+    <div className="h-full overflow-y-auto p-8">
       <PageHeader
         title="Judgment Ledger"
         subtitle="Every belief, its confidence, and its outcome."

@@ -28,9 +28,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <body className="font-body antialiased">
-        <div className="flex min-h-screen">
+        <div className="flex h-screen overflow-hidden">
           <SideNav />
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          <main className="flex-1 overflow-hidden">{children}</main>
         </div>
       </body>
     </html>

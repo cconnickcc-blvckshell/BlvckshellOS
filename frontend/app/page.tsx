@@ -1,117 +1,46 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { motion } from "framer-motion";
-import { api } from "@/lib/api";
+import { useState } from "react";
+import clsx from "clsx";
+import { ChatPanel } from "@/components/ChatPanel";
+import { CommandCenter } from "@/components/CommandCenter";
 
-export default function IntakePage() {
-  const router = useRouter();
-  const [idea, setIdea] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
-
-  async function submit() {
-    const text = idea.trim();
-    if (!text) return;
-    setStatus("sending");
-    try {
-      const res = await api.submitIdea(text, false);
-      setStatus("sent");
-      setTimeout(() => router.push(`/pipelines?focus=${res.pipeline_id}`), 600);
-    } catch {
-      setStatus("error");
-    }
-  }
-
-  function toggleVoice() {
-    const SR =
-      (typeof window !== "undefined" &&
-        ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) ||
-      null;
-    if (!SR) {
-      setStatus("error");
-      return;
-    }
-    if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
-      return;
-    }
-    const recognition = new SR();
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.onresult = (e: any) => {
-      const transcript = Array.from(e.results)
-        .map((r: any) => r[0].transcript)
-        .join(" ");
-      setIdea(transcript);
-    };
-    recognition.onend = () => setListening(false);
-    recognition.start();
-    recognitionRef.current = recognition;
-    setListening(true);
-  }
+export default function HomePage() {
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-6">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-3xl"
+    <div className="relative flex h-full overflow-hidden">
+      {/* Chat — full width on mobile, 40% on desktop */}
+      <ChatPanel className="w-full border-r border-white/10 md:w-2/5" />
+
+      {/* Command center — bottom drawer on mobile, 60% panel on desktop */}
+      <CommandCenter
+        className={clsx(
+          "hidden md:flex md:w-3/5",
+          drawerOpen &&
+            "fixed inset-x-0 bottom-0 z-30 flex h-[72vh] w-full rounded-t-2xl border-t border-white/10 shadow-2xl md:relative md:inset-auto md:h-full md:rounded-none md:border-t-0 md:shadow-none",
+        )}
+      />
+
+      {/* Mobile drawer toggle */}
+      <button
+        type="button"
+        onClick={() => setDrawerOpen((v) => !v)}
+        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary font-mono text-lg text-white shadow-lg shadow-primary/30 md:hidden"
+        aria-label={drawerOpen ? "Close command center" : "Open command center"}
       >
-        <h1 className="mb-2 text-center font-display text-3xl font-semibold tracking-tight">
-          Drop an idea.
-        </h1>
-        <p className="mb-10 text-center font-body text-sm text-text-secondary">
-          The harness takes over. CKOS decomposes, routes, and executes.
-        </p>
+        {drawerOpen ? "×" : "◎"}
+      </button>
 
-        <div className="glass relative rounded-2xl p-2 shadow-2xl shadow-primary/10">
-          <textarea
-            value={idea}
-            onChange={(e) => setIdea(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
-            }}
-            placeholder="I want to build a trading AI that outperforms the market…"
-            rows={3}
-            className="w-full resize-none bg-transparent px-5 py-4 font-body text-lg text-text-primary outline-none placeholder:text-text-secondary"
-          />
-          <div className="flex items-center justify-between px-4 pb-3">
-            <button
-              onClick={toggleVoice}
-              className={`flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-xs transition-colors ${
-                listening
-                  ? "border-active bg-active/20 text-active"
-                  : "border-border text-text-secondary hover:border-primary hover:text-text-primary"
-              }`}
-            >
-              <span className={listening ? "animate-pulse-fast" : ""}>●</span>
-              {listening ? "listening" : "voice"}
-            </button>
-            <button
-              onClick={submit}
-              disabled={status === "sending" || !idea.trim()}
-              className="rounded-full bg-primary px-6 py-2 font-display text-sm font-medium text-white transition-all hover:bg-active disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {status === "sending" ? "Running…" : "Run →"}
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 h-5 text-center font-mono text-xs">
-          {status === "sent" && <span className="text-success">Got it, running.</span>}
-          {status === "error" && (
-            <span className="text-error">Could not reach the harness or voice is unavailable.</span>
-          )}
-          {status === "idle" && (
-            <span className="text-text-secondary">⌘/Ctrl + Enter to run</span>
-          )}
-        </div>
-      </motion.div>
+      {/* Mobile drawer backdrop */}
+      {drawerOpen && (
+        <button
+          type="button"
+          aria-label="Close"
+          className="fixed inset-0 z-20 bg-black/60 md:hidden"
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
     </div>
   );
 }

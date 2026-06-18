@@ -50,7 +50,7 @@ function PipelinesInner() {
   }, [focus]);
 
   return (
-    <div className="p-8">
+    <div className="h-full overflow-y-auto p-8">
       <PageHeader
         title="Pipelines"
         subtitle="Watch the brains think in real time."

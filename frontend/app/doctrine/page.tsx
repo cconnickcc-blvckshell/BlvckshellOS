@@ -31,7 +31,7 @@ export default function DoctrinePage() {
   }, []);
 
   return (
-    <div className="p-8">
+    <div className="h-full overflow-y-auto p-8">
       <PageHeader
         title="Doctrine"
         subtitle="Validated beliefs. The system's accumulated wisdom — append-only."
