@@ -30,7 +30,7 @@ export default function RootLayout({
       <body className="font-body antialiased">
         <div className="flex h-screen overflow-hidden">
           <SideNav />
-          <main className="flex-1 overflow-hidden">{children}</main>
+          <main className="flex-1 overflow-hidden pt-12 md:pt-0">{children}</main>
         </div>
       </body>
     </html>

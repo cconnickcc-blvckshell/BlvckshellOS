@@ -8,19 +8,8 @@ const STATE_STYLES: Record<
   { color: string; glow: string; label: string; pulse: boolean; white?: boolean }
 > = {
   IDLE: { color: "#7B2FBE", glow: "rgba(123,47,190,0.35)", label: "idle", pulse: false },
-  THINKING: {
-    color: "#A855F7",
-    glow: "rgba(168,85,247,0.6)",
-    label: "thinking",
-    pulse: true,
-  },
-  EXECUTING: {
-    color: "#FFFFFF",
-    glow: "rgba(255,255,255,0.55)",
-    label: "executing",
-    pulse: true,
-    white: true,
-  },
+  THINKING: { color: "#A855F7", glow: "rgba(168,85,247,0.6)", label: "thinking", pulse: true },
+  EXECUTING: { color: "#FFFFFF", glow: "rgba(255,255,255,0.55)", label: "executing", pulse: true, white: true },
   ERROR: { color: "#EF4444", glow: "rgba(239,68,68,0.5)", label: "error", pulse: true },
   OFFLINE: { color: "#33334d", glow: "rgba(51,51,77,0.3)", label: "offline", pulse: false },
 };
@@ -28,11 +17,44 @@ const STATE_STYLES: Record<
 export function BrainOrb({
   state,
   size = 56,
+  variant = "default",
 }: {
   state: BrainState;
   size?: number;
+  variant?: "default" | "compact";
 }) {
   const s = STATE_STYLES[state] ?? STATE_STYLES.IDLE;
+
+  if (variant === "compact") {
+    return (
+      <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+        <motion.span
+          className="absolute rounded-full border border-primary/30"
+          style={{ width: size, height: size }}
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: s.pulse ? 8 : 20, ease: "linear" }}
+        />
+        <motion.span
+          className="absolute rounded-full border border-cyan-accent/40"
+          style={{ width: size * 0.72, height: size * 0.72 }}
+          animate={{ rotate: -360 }}
+          transition={{ repeat: Infinity, duration: s.pulse ? 5 : 14, ease: "linear" }}
+        />
+        <motion.span
+          className="relative rounded-full"
+          style={{
+            width: size * 0.32,
+            height: size * 0.32,
+            background: s.color,
+            boxShadow: `0 0 8px ${s.glow}`,
+          }}
+          animate={s.pulse ? { scale: [0.9, 1.1, 0.9], opacity: [0.7, 1, 0.7] } : {}}
+          transition={{ repeat: Infinity, duration: 1.2 }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
       <motion.span
@@ -49,11 +71,7 @@ export function BrainOrb({
             ? { scale: [0.9, 1.12, 0.9], opacity: [0.65, 1, 0.65] }
             : { scale: [0.94, 1.04, 0.94], opacity: [0.5, 0.8, 0.5] }
         }
-        transition={{
-          duration: s.pulse ? 1.2 : 3.2,
-          repeat: Infinity,
-          ease: "easeInOut",
-        }}
+        transition={{ duration: s.pulse ? 1.2 : 3.2, repeat: Infinity, ease: "easeInOut" }}
       />
       <span
         className="relative rounded-full"

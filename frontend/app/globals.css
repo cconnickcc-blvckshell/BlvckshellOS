@@ -23,7 +23,6 @@ body {
   background-attachment: fixed;
 }
 
-/* Thin, deep-space scrollbar. */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -43,4 +42,75 @@ body {
   background: rgba(15, 15, 26, 0.72);
   backdrop-filter: blur(10px);
   border: 1px solid #1a1a2e;
+}
+
+.page-header-arc::after {
+  content: "";
+  display: block;
+  height: 1px;
+  margin-top: 0.75rem;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(168, 85, 247, 0.5),
+    rgba(34, 211, 238, 0.4),
+    transparent
+  );
+  animation: scan-sweep 4s linear infinite;
+}
+
+.nav-scan-border::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(168, 85, 247, 0.6),
+    rgba(34, 211, 238, 0.3),
+    transparent
+  );
+  background-size: 100% 200%;
+  animation: scan-vertical 6s linear infinite;
+  pointer-events: none;
+}
+
+.btn-scan {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-scan::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(168, 85, 247, 0.25) 50%,
+    transparent 60%
+  );
+  transform: translateX(-100%);
+  animation: scan-sweep 3s ease-in-out infinite;
+}
+
+@keyframes scan-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes scan-vertical {
+  0% {
+    background-position: 0 -100%;
+  }
+  100% {
+    background-position: 0 100%;
+  }
 }

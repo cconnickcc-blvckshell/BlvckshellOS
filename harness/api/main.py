@@ -9,6 +9,7 @@ whole nervous system.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from contextlib import asynccontextmanager
 from typing import Any
@@ -17,22 +18,14 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from intake.api import create_intake_router
-from pydantic import BaseModel, Field
-
 from harness.api.errors import CorrelationIdMiddleware, register_error_handlers
 from harness.config import get_settings
 from harness.core.errors import HarnessError
 from harness.core.harness import Harness
+from harness.schemas.chat import ChatRequest
 from harness.schemas.judgment import OutcomeRecord
 
 _harness: Harness | None = None
-
-
-class ChatRequest(BaseModel):
-    """POST /chat body."""
-
-    message: str = Field(min_length=1)
-    session_id: str | None = None
 
 
 def get_harness() -> Harness:
@@ -87,9 +80,15 @@ def create_app() -> FastAPI:
     @app.post("/chat", tags=["chat"])
     async def chat(chat_request: ChatRequest) -> dict[str, Any]:
         """Send a message to Blvckbot and receive a coordinated response."""
+        attachments = (
+            [a.model_dump(mode="json") for a in chat_request.attachments]
+            if chat_request.attachments
+            else None
+        )
         return await get_harness().run_chat(
             chat_request.message,
             session_id=chat_request.session_id,
+            attachments=attachments,
         )
 
     @app.get("/chat/history/{session_id}", tags=["chat"])
@@ -180,9 +179,43 @@ def create_app() -> FastAPI:
 
         async def event_source():
             observer = get_harness().observer
-            async for event in observer.stream():
-                yield f"data: {json.dumps(event.model_dump(mode='json'))}\n\n"
-                await asyncio.sleep(0)
+            queue: asyncio.Queue[tuple[str, object | None]] = asyncio.Queue()
+
+            async def pump_events() -> None:
+                try:
+                    async for event in observer.stream():
+                        await queue.put(("event", event))
+                except asyncio.CancelledError:
+                    raise
+                finally:
+                    await queue.put(("done", None))
+
+            async def send_heartbeats() -> None:
+                try:
+                    while True:
+                        await asyncio.sleep(15)
+                        await queue.put(("heartbeat", None))
+                except asyncio.CancelledError:
+                    return
+
+            pump = asyncio.create_task(pump_events())
+            heartbeat = asyncio.create_task(send_heartbeats())
+            try:
+                while True:
+                    kind, payload = await queue.get()
+                    if kind == "done":
+                        break
+                    if kind == "heartbeat":
+                        yield ": heartbeat\n\n"
+                        continue
+                    event = payload
+                    yield f"data: {json.dumps(event.model_dump(mode='json'))}\n\n"  # type: ignore[union-attr]
+            finally:
+                pump.cancel()
+                heartbeat.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await pump
+                    await heartbeat
 
         return StreamingResponse(event_source(), media_type="text/event-stream")
 

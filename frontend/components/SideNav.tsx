@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 
 const LINKS = [
@@ -13,10 +15,10 @@ const LINKS = [
   { href: "/observer", label: "Observer", glyph: "⊚" },
 ];
 
-export function SideNav() {
+function NavContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
-    <nav className="flex w-52 shrink-0 flex-col gap-1 border-r border-border bg-surface/40 p-4 lg:w-60 lg:p-5">
+    <>
       <div className="mb-6 px-2 lg:mb-8">
         <div className="font-display text-base font-semibold tracking-tight text-text-primary lg:text-lg">
           BLVCKSHELL OS
@@ -34,6 +36,7 @@ export function SideNav() {
           <Link
             key={link.href}
             href={link.href}
+            onClick={onNavigate}
             className={clsx(
               "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
               active
@@ -58,6 +61,52 @@ export function SideNav() {
         <br />
         command center
       </div>
-    </nav>
+    </>
+  );
+}
+
+export function SideNav() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="fixed left-3 top-3 z-50 rounded-lg border border-border bg-surface/90 px-3 py-2 font-mono text-xs text-text-primary md:hidden"
+        aria-label="Open navigation"
+      >
+        ☰
+      </button>
+
+      <nav className="nav-scan-border relative hidden w-14 shrink-0 flex-col gap-1 border-r border-border bg-surface/40 p-3 md:flex lg:w-52 lg:p-5">
+        <NavContent />
+      </nav>
+
+      <AnimatePresence>
+        {open && (
+          <>
+            <motion.button
+              type="button"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/70 md:hidden"
+              aria-label="Close navigation"
+              onClick={() => setOpen(false)}
+            />
+            <motion.nav
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              transition={{ type: "spring", damping: 28, stiffness: 320 }}
+              className="nav-scan-border fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 border-r border-border bg-surface p-5 md:hidden"
+            >
+              <NavContent onNavigate={() => setOpen(false)} />
+            </motion.nav>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

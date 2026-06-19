@@ -294,7 +294,13 @@ class Harness:
                 return worker
         return None
 
-    async def run_chat(self, message: str, *, session_id: str | None = None) -> dict:
+    async def run_chat(
+        self,
+        message: str,
+        *,
+        session_id: str | None = None,
+        attachments: list[dict] | None = None,
+    ) -> dict:
         """Send a message to Blvckbot and return the synthesized response."""
         if not self._started:
             await self.startup()
@@ -310,7 +316,13 @@ class Harness:
             )
 
         sid = session_id or await self.memory.conversations.get_or_create_session("operator")
-        await self.memory.conversations.append(sid, "operator", message, {"source": "chat_api"})
+        meta: dict = {"source": "chat_api"}
+        if attachments:
+            meta["attachments"] = [
+                {"filename": a.get("filename"), "type": a.get("type"), "media_type": a.get("media_type")}
+                for a in attachments
+            ]
+        await self.memory.conversations.append(sid, "operator", message or "(attachment)", meta)
 
         run_id = f"chat-{sid}"
         reply_to = f"chat-reply:{run_id}"
@@ -318,9 +330,9 @@ class Harness:
             run_id=run_id,
             objective_id=run_id,
             capability="converse",
-            objective=message,
+            objective=message or "Review the attached file(s) and respond.",
             assigned_brain="blvckbot",
-            inputs={"session_id": sid},
+            inputs={"session_id": sid, "attachments": attachments or []},
         )
         task_msg = HarnessMessage(
             source=reply_to,

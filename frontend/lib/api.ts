@@ -1,5 +1,7 @@
 // Thin client for the Blvckshell harness HTTP API.
 
+import { createReconnectingObserverStream } from "./observerStream";
+
 export const HARNESS_URL =
   process.env.NEXT_PUBLIC_HARNESS_URL || "http://localhost:8000";
 
@@ -195,15 +197,27 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface ChatAttachmentPayload {
+  type: "image" | "video" | "document";
+  filename: string;
+  media_type: string;
+  data: string;
+}
+
 export async function sendChatMessage(
   message: string,
   sessionId?: string,
+  attachments?: ChatAttachmentPayload[],
 ): Promise<ChatResponse> {
   const path = "/chat";
   const res = await fetch(`${HARNESS_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, session_id: sessionId }),
+    body: JSON.stringify({
+      message: message || "",
+      session_id: sessionId,
+      attachments: attachments?.length ? attachments : undefined,
+    }),
   });
   if (!res.ok) throw await parseApiError(res, path);
   return res.json() as Promise<ChatResponse>;
@@ -234,15 +248,7 @@ export async function recordOutcome(
 export function connectObserverStream(
   onEvent: (event: AuditEvent) => void,
 ): EventSource {
-  const es = new EventSource(`${HARNESS_URL}/observer/stream`);
-  es.onmessage = (e) => {
-    try {
-      onEvent(JSON.parse(e.data) as AuditEvent);
-    } catch {
-      /* ignore malformed frames */
-    }
-  };
-  return es;
+  return createReconnectingObserverStream(onEvent);
 }
 
 export const OUTCOME_BADGE_STYLES: Record<JudgmentOutcome, string> = {

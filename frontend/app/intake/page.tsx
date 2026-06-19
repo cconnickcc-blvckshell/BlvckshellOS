@@ -99,7 +99,7 @@ export default function IntakePage() {
             <button
               onClick={submit}
               disabled={status === "sending" || !idea.trim()}
-              className="rounded-full bg-primary px-6 py-2 font-display text-sm font-medium text-white transition-all hover:bg-active disabled:cursor-not-allowed disabled:opacity-40"
+              className="btn-scan rounded-full bg-primary px-6 py-2 font-display text-sm font-medium text-white transition-all hover:bg-active disabled:cursor-not-allowed disabled:opacity-40"
             >
               {status === "sending" ? "Running…" : "Run →"}
             </button>

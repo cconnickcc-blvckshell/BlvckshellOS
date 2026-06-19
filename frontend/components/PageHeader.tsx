@@ -8,7 +8,7 @@ export function PageHeader({
   online?: boolean;
 }) {
   return (
-    <div className="mb-8 flex items-start justify-between">
+    <div className="page-header-arc mb-8 flex items-start justify-between">
       <div>
         <h1 className="font-display text-2xl font-semibold tracking-tight text-text-primary">
           {title}

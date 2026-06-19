@@ -236,8 +236,10 @@ class BlvckbotBrain(BaseBrain):
             )
             or "- (none)"
         )
+        attachment_block = self._format_attachments(task.inputs.get("attachments") or [])
         return (
             f"OPERATOR REQUEST:\n{task.objective}\n\n"
+            f"{attachment_block}"
             f"CONVERSATION HISTORY:\n{transcript}\n\n"
             f"AVAILABLE SPECIALIST BRAINS:\n{capabilities}\n\n"
             f"RECENT JUDGMENTS:\n{judgments}\n\n"
@@ -245,6 +247,33 @@ class BlvckbotBrain(BaseBrain):
             "Reason through the request. State your plan. Recommend PROCEED, "
             "STAGED_PROCEED, REQUEST_MORE_EVIDENCE, or HOLD explicitly."
         )
+
+    @staticmethod
+    def _format_attachments(attachments: list) -> str:
+        """Render attached files for the evidence-gathering prompt."""
+        if not attachments:
+            return ""
+        import base64
+
+        lines = ["ATTACHMENTS:"]
+        for item in attachments:
+            if not isinstance(item, dict):
+                continue
+            filename = item.get("filename", "file")
+            media_type = item.get("media_type", "application/octet-stream")
+            kind = item.get("type", "document")
+            lines.append(f"- {filename} ({kind}, {media_type})")
+            if kind == "document" and media_type.startswith("text/"):
+                try:
+                    raw = base64.b64decode(item.get("data", ""))
+                    text = raw.decode("utf-8", errors="replace")[:4000]
+                    lines.append(f"  content preview:\n{text}")
+                except Exception:
+                    lines.append("  (could not decode text content)")
+            elif kind == "image":
+                lines.append("  (image data provided — describe and reason about it)")
+        lines.append("")
+        return "\n".join(lines) + "\n"
 
     def _plan_delegations(
         self,

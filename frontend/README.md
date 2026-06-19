@@ -4,14 +4,12 @@ The operator's command center for the harness. Dark. Precise. Alive.
 
 ## Views
 
-- **Intake** (`/`) — full-screen single input with a voice button (Web Speech
-  API). Drop an idea; the harness takes over.
-- **Pipelines** (`/pipelines`) — live view of active pipelines with breathing
-  brain status orbs (idle / thinking / executing / error) and per-run synthesis.
-- **Judgment Ledger** (`/ledger`) — every belief, confidence, and outcome,
-  filterable by brain.
-- **Doctrine** (`/doctrine`) — promoted, validated beliefs. Append-only feel.
-- **Observer** (`/observer`) — the real-time audit stream (SSE), every event.
+- **Home** (`/`) — Blvckbot living core: voice-first chat, reactor UI, brain column
+- **Intake** (`/intake`) — drop an idea and launch a pipeline
+- **Pipelines** (`/pipelines`) — live brain orbs and pipeline synthesis
+- **Judgment Ledger** (`/ledger`) — beliefs, confidence, outcomes
+- **Doctrine** (`/doctrine`) — promoted validated beliefs
+- **Observer** (`/observer`) — real-time audit stream (SSE with reconnect)
 
 ## Develop
 
