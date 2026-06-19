@@ -57,13 +57,13 @@ function PipelinesInner() {
         online={online}
       />
 
-      <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {brains.map((brain) => (
           <div
             key={brain.brain_id}
             className="glass flex flex-col items-center gap-3 rounded-xl p-5 text-center"
           >
-            <BrainOrb state={brain.state} />
+            <BrainOrb state={brain.state} variant="compact" />
             <div>
               <div className="font-display text-sm text-text-primary">{brain.name}</div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-text-secondary">

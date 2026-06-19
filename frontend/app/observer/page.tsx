@@ -72,7 +72,13 @@ export default function ObserverPage() {
         </span>
       </div>
 
-      <div className="glass max-h-[75vh] overflow-y-auto rounded-xl p-1 font-mono text-xs">
+      <div className="table-scan-header glass max-h-[75vh] overflow-y-auto rounded-xl p-1 font-mono text-xs">
+        <div className="flex items-start gap-3 border-b border-border/60 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-text-secondary">
+          <span className="shrink-0">Time</span>
+          <span className="w-40 shrink-0">Event</span>
+          <span className="w-24 shrink-0">Source</span>
+          <span>Message</span>
+        </div>
         {events.map((e) => (
           <div
             key={e.id}

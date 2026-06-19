@@ -97,6 +97,28 @@ body {
   animation: scan-sweep 3s ease-in-out infinite;
 }
 
+.table-scan-header {
+  position: relative;
+  overflow: hidden;
+}
+
+.table-scan-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(168, 85, 247, 0.5),
+    rgba(34, 211, 238, 0.4),
+    transparent
+  );
+  animation: scan-sweep 4s linear infinite;
+}
+
 @keyframes scan-sweep {
   0% {
     transform: translateX(-100%);

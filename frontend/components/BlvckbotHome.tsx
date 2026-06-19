@@ -7,6 +7,7 @@ import { VoiceInput } from "@/components/VoiceInput";
 import { MediaAttach, filesToAttachments, type ChatAttachment } from "@/components/MediaAttach";
 import { ChatTranscript, useStreamingText, type DisplayMessage } from "@/components/ChatTranscript";
 import { BrainColumn } from "@/components/BrainColumn";
+import { DelegationBeam } from "@/components/DelegationBeam";
 import {
   formatApiError,
   getChatHistory,
@@ -46,6 +47,9 @@ export function BlvckbotHome() {
   const [dismissedOutcomes, setDismissedOutcomes] = useState<Set<string>>(new Set());
 
   const outcomeTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const containerRef = useRef<HTMLDivElement>(null);
+  const coreRef = useRef<HTMLDivElement>(null);
+  const brainOrbRefs = useRef<Map<string, HTMLElement>>(new Map());
   const streamingContent = useStreamingText(speakingText, coreState === "speaking");
 
   const loadSession = useCallback(async (sid: string) => {
@@ -95,11 +99,20 @@ export function BlvckbotHome() {
       setError(null);
       setCoreState("thinking");
 
+      const sentAttachments = [...attachments];
       const operatorMsg: DisplayMessage = {
         id: `op-${Date.now()}`,
         role: "operator",
-        content: trimmed || `[${attachments.map((a) => a.filename).join(", ")}]`,
+        content: trimmed || `[${sentAttachments.map((a) => a.filename).join(", ")}]`,
         createdAt: new Date().toISOString(),
+        attachments: sentAttachments.map((a) => ({
+          type: a.type,
+          filename: a.filename,
+          media_type: a.media_type,
+          previewUrl:
+            a.previewUrl ??
+            (a.type === "image" ? `data:${a.media_type};base64,${a.data}` : undefined),
+        })),
       };
       const pendingId = `pending-${Date.now()}`;
       setMessages((prev) => [
@@ -108,7 +121,6 @@ export function BlvckbotHome() {
         { id: pendingId, role: "blvckbot", content: "", createdAt: new Date().toISOString(), pending: true },
       ]);
       setInput("");
-      const sentAttachments = [...attachments];
       setAttachments([]);
 
       try {
@@ -128,17 +140,20 @@ export function BlvckbotHome() {
 
         setMessages((prev) => [...prev.filter((m) => m.id !== pendingId), botMsg]);
 
-        if (res.actions_taken?.length) {
+        const targetBrain =
+          res.actions_taken[0]?.brain_id ?? res.actions_taken[0]?.capability;
+        if (targetBrain) {
           setCoreState("delegating");
-          setDelegatingTo(res.actions_taken[0]?.capability);
+          setDelegatingTo(targetBrain);
+          setSpeakingText(res.response);
           setTimeout(() => {
             setCoreState("speaking");
             setDelegatingTo(undefined);
           }, 800);
+        } else {
+          setSpeakingText(res.response);
+          setCoreState("speaking");
         }
-
-        setSpeakingText(res.response);
-        setCoreState("speaking");
 
         if (res.judgment_ids?.length) scheduleOutcomePrompt(botMsg.id);
       } catch (err) {
@@ -158,10 +173,19 @@ export function BlvckbotHome() {
   );
 
   return (
-    <div className="relative flex h-full overflow-hidden">
+    <div ref={containerRef} className="relative flex h-full overflow-hidden">
+      <DelegationBeam
+        active={coreState === "delegating" && !!delegatingTo}
+        fromRef={coreRef}
+        toBrainId={delegatingTo}
+        brainOrbRefs={brainOrbRefs}
+        containerRef={containerRef}
+      />
+
       {/* Main Blvckbot column */}
       <div className="flex min-w-0 flex-1 flex-col md:w-[55%]">
         <div
+          ref={coreRef}
           className="relative flex flex-1 flex-col items-center justify-center px-4 pt-4"
           onDragEnter={() => setDropActive(true)}
           onDragLeave={() => setDropActive(false)}
@@ -240,7 +264,15 @@ export function BlvckbotHome() {
       {/* Brain column — desktop */}
       <BrainColumn
         activeDelegation={delegatingTo}
-        onDelegation={setDelegatingTo}
+        brainOrbRefs={brainOrbRefs}
+        onDelegation={(id) => {
+          setDelegatingTo(id);
+          setCoreState((s) => {
+            if (id) return "delegating";
+            if (s === "delegating") return "thinking";
+            return s;
+          });
+        }}
         className="hidden w-[45%] md:flex"
       />
 
@@ -263,7 +295,15 @@ export function BlvckbotHome() {
           <div className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-sm md:hidden">
             <BrainColumn
               activeDelegation={delegatingTo}
-              onDelegation={setDelegatingTo}
+              brainOrbRefs={brainOrbRefs}
+              onDelegation={(id) => {
+                setDelegatingTo(id);
+                setCoreState((s) => {
+                  if (id) return "delegating";
+                  if (s === "delegating") return "thinking";
+                  return s;
+                });
+              }}
               className="h-full bg-bg"
             />
           </div>

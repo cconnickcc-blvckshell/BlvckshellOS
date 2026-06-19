@@ -62,7 +62,7 @@ export default function LedgerPage() {
 
       <div className="glass overflow-hidden rounded-xl">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-border font-mono text-[10px] uppercase tracking-widest text-text-secondary">
+          <thead className="table-scan-header border-b border-border font-mono text-[10px] uppercase tracking-widest text-text-secondary">
             <tr>
               <th className="px-4 py-3">Brain</th>
               <th className="px-4 py-3">Belief</th>

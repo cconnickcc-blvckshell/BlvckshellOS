@@ -145,6 +145,7 @@ class BlvckbotBrain(BaseBrain):
                 )
                 action = {
                     "capability": capability,
+                    "brain_id": call.target_brain_id,
                     "objective": objective[:160],
                     "status": call.status.value,
                     "result": (call.result or "")[:280],

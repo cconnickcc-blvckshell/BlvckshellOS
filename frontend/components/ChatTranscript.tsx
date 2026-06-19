@@ -85,9 +85,15 @@ export interface DisplayMessage {
   content: string;
   createdAt: string;
   judgmentOutcome?: import("@/lib/api").JudgmentOutcome | null;
-  actionsTaken?: Array<{ capability: string; status?: string; result?: string }>;
+  actionsTaken?: Array<{ capability: string; brain_id?: string; status?: string; result?: string }>;
   judgmentIds?: string[];
   pending?: boolean;
+  attachments?: Array<{
+    type: "image" | "video" | "document";
+    filename: string;
+    media_type: string;
+    previewUrl?: string;
+  }>;
 }
 
 export function ChatTranscript({
@@ -113,15 +119,39 @@ export function ChatTranscript({
         {visible.map((msg) => {
           if (msg.role === "operator") {
             return (
-              <motion.p
+              <motion.div
                 key={msg.id}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="mb-3 text-right font-body text-sm text-text-secondary"
+                className="mb-3 text-right"
               >
-                {msg.content}
-                <span className="ml-2 font-mono text-[9px]">{formatTime(msg.createdAt)}</span>
-              </motion.p>
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="mb-2 flex flex-wrap justify-end gap-2">
+                    {msg.attachments.map((a, i) =>
+                      a.type === "image" && a.previewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={`${a.filename}-${i}`}
+                          src={a.previewUrl}
+                          alt={a.filename}
+                          className="max-h-24 max-w-[160px] rounded-lg border border-border object-cover"
+                        />
+                      ) : (
+                        <span
+                          key={`${a.filename}-${i}`}
+                          className="rounded-full border border-border bg-surface/80 px-2 py-1 font-mono text-[10px] text-text-secondary"
+                        >
+                          {a.type === "video" ? "▶" : "📄"} {a.filename}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                )}
+                <p className="font-body text-sm text-text-secondary">
+                  {msg.content}
+                  <span className="ml-2 font-mono text-[9px]">{formatTime(msg.createdAt)}</span>
+                </p>
+              </motion.div>
             );
           }
 

@@ -102,6 +102,7 @@ class AgentCall(BaseModel):
         result: The sub-agent's result summary, once returned.
         error: Error detail if the sub-agent failed.
         status: Lifecycle status of the sub-agent call.
+        target_brain_id: The brain that handled the sub-agent task, if dispatched.
     """
 
     agent_call_id: str = Field(default_factory=_new_id)
@@ -115,3 +116,4 @@ class AgentCall(BaseModel):
     result: str | None = None
     error: str | None = None
     status: TaskStatus = TaskStatus.PENDING
+    target_brain_id: str | None = None

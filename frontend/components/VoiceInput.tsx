@@ -26,6 +26,36 @@ export function VoiceInput({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number>(0);
   const amplitudeRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const freqDataRef = useRef<Uint8Array | null>(null);
+
+  const drawWaveform = useCallback(() => {
+    const canvas = canvasRef.current;
+    const analyser = analyserRef.current;
+    const data = freqDataRef.current;
+    if (!canvas || !analyser || !data) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const barCount = 24;
+    const step = Math.floor(data.length / barCount);
+    const gap = 3;
+    const barWidth = (w - gap * (barCount - 1)) / barCount;
+
+    for (let i = 0; i < barCount; i++) {
+      const v = data[i * step] / 255;
+      const barH = Math.max(4, v * h * 0.9);
+      const x = i * (barWidth + gap);
+      const y = (h - barH) / 2;
+      ctx.fillStyle = `rgba(168, 85, 247, ${0.35 + v * 0.55})`;
+      ctx.fillRect(x, y, barWidth, barH);
+    }
+  }, []);
 
   const stopAudio = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -35,6 +65,12 @@ export function VoiceInput({
     audioCtxRef.current = null;
     analyserRef.current = null;
     amplitudeRef.current = 0;
+    freqDataRef.current = null;
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    }
     onListeningChange?.(false, 0);
   }, [onListeningChange]);
 
@@ -49,6 +85,7 @@ export function VoiceInput({
       analyserRef.current = analyser;
       ctx.createMediaStreamSource(stream).connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
+      freqDataRef.current = data;
 
       const tick = () => {
         analyser.getByteFrequencyData(data);
@@ -57,13 +94,14 @@ export function VoiceInput({
         const amp = sum / data.length / 255;
         amplitudeRef.current = amp;
         onListeningChange?.(true, amp);
+        drawWaveform();
         rafRef.current = requestAnimationFrame(tick);
       };
       tick();
     } catch {
       onListeningChange?.(true, 0.3);
     }
-  }, [onListeningChange]);
+  }, [onListeningChange, drawWaveform]);
 
   const stopRecognition = useCallback(() => {
     recognitionRef.current?.stop();
@@ -160,6 +198,16 @@ export function VoiceInput({
       >
         <span className="font-mono text-2xl text-text-primary">●</span>
       </button>
+
+      {listening && (
+        <canvas
+          ref={canvasRef}
+          width={200}
+          height={40}
+          className="h-10 w-[200px] rounded-lg opacity-90"
+          aria-hidden
+        />
+      )}
 
       <p className="font-mono text-[10px] uppercase tracking-widest text-text-secondary">
         {listening ? "Listening…" : isMobile ? "Hold to speak" : "Tap to speak"}

@@ -198,19 +198,28 @@ class BaseBrain(abc.ABC):
         )
         reply_address = f"agent:{call.agent_call_id}"
 
+        brain_info = await self.runtime.registry.find_by_capability(capability)
+        target_brain_id = brain_info.brain_id if brain_info else None
+
         await self.runtime.observer.record(
             AuditEventType.AGENT_SPAWNED,
             source=self.brain_id,
             context_id=run_id,
             message=f"spawned sub-agent for capability '{capability}'",
-            data={"agent_call_id": call.agent_call_id, "objective": objective[:120]},
+            data={
+                "agent_call_id": call.agent_call_id,
+                "objective": objective[:120],
+                "capability": capability,
+                "target_brain_id": target_brain_id,
+            },
         )
 
-        brain_info = await self.runtime.registry.find_by_capability(capability)
         if brain_info is None:
             call.status = TaskStatus.FAILED
             call.error = f"No brain registered for capability '{capability}'"
             return call
+
+        call.target_brain_id = brain_info.brain_id
 
         task = Task(
             run_id=run_id,
@@ -253,7 +262,12 @@ class BaseBrain(abc.ABC):
             source=self.brain_id,
             context_id=run_id,
             message=f"sub-agent returned for capability '{capability}'",
-            data={"agent_call_id": call.agent_call_id, "succeeded": result.succeeded},
+            data={
+                "agent_call_id": call.agent_call_id,
+                "succeeded": result.succeeded,
+                "target_brain_id": brain_info.brain_id,
+                "capability": capability,
+            },
         )
         return call
 

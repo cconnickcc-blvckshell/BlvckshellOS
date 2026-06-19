@@ -20,12 +20,14 @@ export interface BrainColumnProps {
   activeDelegation?: string;
   className?: string;
   onDelegation?: (brainId: string | undefined) => void;
+  brainOrbRefs?: React.MutableRefObject<Map<string, HTMLElement>>;
 }
 
 export function BrainColumn({
   activeDelegation,
   className = "",
   onDelegation,
+  brainOrbRefs,
 }: BrainColumnProps) {
   const [brains, setBrains] = useState<Brain[]>([]);
   const [delegations, setDelegations] = useState<DelegationItem[]>([]);
@@ -66,9 +68,12 @@ export function BrainColumn({
     const es = createReconnectingObserverStream((event: AuditEvent) => {
       if (event.event_type === "AGENT_SPAWNED") {
         const cap = String(event.data.capability ?? "task");
+        const brainId = String(
+          event.data.target_brain_id ?? event.data.brain_id ?? event.source,
+        );
         const item: DelegationItem = {
           id: event.id,
-          brainId: event.source,
+          brainId,
           capability: cap,
           preview: String(event.data.objective ?? event.message).slice(0, 80),
           timestamp: event.timestamp,
@@ -76,7 +81,7 @@ export function BrainColumn({
         };
         pendingRef.current.set(String(event.data.agent_call_id ?? event.id), item);
         setDelegations((prev) => [item, ...prev].slice(0, 5));
-        onDelegation?.(event.source);
+        if (event.data.target_brain_id) onDelegation?.(String(event.data.target_brain_id));
       }
       if (event.event_type === "AGENT_RETURNED") {
         const key = String(event.data.agent_call_id ?? "");
@@ -115,6 +120,9 @@ export function BrainColumn({
               .map((brain) => (
                 <motion.div
                   key={brain.brain_id}
+                  ref={(el) => {
+                    if (el && brainOrbRefs) brainOrbRefs.current.set(brain.brain_id, el);
+                  }}
                   animate={
                     activeDelegation === brain.brain_id
                       ? { boxShadow: ["0 0 0px #A855F7", "0 0 16px rgba(168,85,247,0.4)", "0 0 0px #A855F7"] }

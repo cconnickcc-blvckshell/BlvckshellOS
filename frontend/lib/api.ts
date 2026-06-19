@@ -72,6 +72,7 @@ export interface ChatMessage {
     judgment_ids?: string[];
     actions_taken?: Array<{
       capability: string;
+      brain_id?: string;
       objective?: string;
       status?: string;
       result?: string;
@@ -94,6 +95,7 @@ export interface ChatResponse {
   judgment_outcome: JudgmentOutcome | null;
   actions_taken: Array<{
     capability: string;
+    brain_id?: string;
     objective?: string;
     status?: string;
     result?: string;
