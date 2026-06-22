@@ -13,6 +13,8 @@ to the Observer so the whole trace is auditable.
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,7 +25,33 @@ from harness.config import Settings
 from harness.core.errors import format_exception, report_error
 from harness.core.llm import LLMClient, LLMResponse, OllamaClient
 from harness.core.observer import Observer
+from harness.logging_config import get_logger
 from harness.schemas.audit import AuditEventType
+
+logger = get_logger("agent_loop")
+
+REPLAN_SYSTEM_PROMPT = (
+    "You are reviewing your own progress on a multi-step task. Below is the "
+    "transcript of what you've done so far. Decide honestly: are you "
+    "converging toward the objective, or stuck — repeating the same action, "
+    "going in circles, or making no real progress?\n\n"
+    "Respond with ONLY a JSON object, no prose, no markdown fences:\n"
+    '{"converging": true|false, "revised_approach": "<if not converging, a '
+    'concise restated strategy to adopt instead; otherwise an empty string>"}'
+)
+
+_REPLAN_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _extract_replan_json(text: str) -> dict[str, Any] | None:
+    """Best-effort extraction of a JSON object from a critique response."""
+    match = _REPLAN_JSON_RE.search(text)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
 
 
 @dataclass(slots=True)
@@ -35,6 +63,7 @@ class AgentLoopResult:
     tool_invocations: list[dict[str, Any]] = field(default_factory=list)
     metrics: dict[str, Any] = field(default_factory=dict)
     transcript: list[dict[str, Any]] = field(default_factory=list)
+    replans: list[dict[str, Any]] = field(default_factory=list)
 
 
 class AgentLoop:
@@ -49,6 +78,8 @@ class AgentLoop:
         max_iterations: int = 6,
         model_config: ModelConfig | None = None,
         settings: Settings | None = None,
+        replan_checkpoint: int = 3,
+        max_replans: int = 2,
     ) -> None:
         self._llm = llm
         self._tools = {tool.name: tool for tool in (tools or [])}
@@ -56,6 +87,8 @@ class AgentLoop:
         self._max_iterations = max_iterations
         self._model_config = model_config
         self._settings = settings
+        self._replan_checkpoint = replan_checkpoint
+        self._max_replans = max_replans
 
     async def run(
         self,
@@ -76,13 +109,16 @@ class AgentLoop:
         total_latency = 0.0
         last_model = "unknown"
         last_provider = "unknown"
+        active_system_prompt = system_prompt
+        last_tool_signature: tuple[tuple[str, str], ...] | None = None
+        replans_used = 0
 
         for _ in range(self._max_iterations):
             result.iterations += 1
             response = await self._think(
                 brain_id=brain_id,
                 context_id=context_id,
-                system_prompt=system_prompt,
+                system_prompt=active_system_prompt,
                 messages=messages,
                 tool_schemas=tool_schemas,
                 model=model,
@@ -98,11 +134,40 @@ class AgentLoop:
                 result.final_text = response.text
                 break
 
+            tool_signature = tuple(
+                sorted(
+                    (call.name, json.dumps(call.arguments, sort_keys=True, default=str))
+                    for call in response.tool_calls
+                )
+            )
+            stalled = tool_signature == last_tool_signature
+            last_tool_signature = tool_signature
+
             messages.append(self._assistant_tool_message(response))
             tool_results = await self._act(
                 brain_id=brain_id, context_id=context_id, response=response, result=result
             )
             messages.append({"role": "user", "content": tool_results})
+
+            at_checkpoint = result.iterations == self._replan_checkpoint
+            if replans_used < self._max_replans and (stalled or at_checkpoint):
+                reason = "stalled" if stalled else "checkpoint"
+                revised_prompt, replan_response = await self._replan(
+                    brain_id=brain_id,
+                    context_id=context_id,
+                    system_prompt=active_system_prompt,
+                    messages=messages,
+                    reason=reason,
+                )
+                replans_used += 1
+                if replan_response is not None:
+                    total_in += replan_response.input_tokens
+                    total_out += replan_response.output_tokens
+                    total_cost += replan_response.cost_usd
+                    total_latency += replan_response.latency_ms
+                if revised_prompt is not None:
+                    active_system_prompt = revised_prompt
+                    result.replans.append({"reason": reason, "iteration": result.iterations})
         else:
             result.final_text = result.final_text or "Reached iteration limit without completion."
 
@@ -116,6 +181,7 @@ class AgentLoop:
             "model_used": last_model,
             "provider": last_provider,
             "tokens": total_in + total_out,
+            "replans": replans_used,
         }
         result.transcript = messages
         return result
@@ -190,6 +256,52 @@ class AgentLoop:
                 data=response.metrics(),
             )
         return response
+
+    async def _replan(
+        self,
+        *,
+        brain_id: str,
+        context_id: str,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        reason: str,
+    ) -> tuple[str | None, LLMResponse | None]:
+        """Ask the model to critique its own progress and revise the system prompt.
+
+        Returns ``(revised_system_prompt, response)``. ``revised_system_prompt``
+        is ``None`` when the critique judges the loop to be converging fine, or
+        when the critique call itself fails — in either case the loop continues
+        unchanged. ``response`` carries usage metrics for the critique call
+        (``None`` only on failure) so callers can fold its cost into totals.
+        """
+        transcript = json.dumps(messages[-6:], default=str)[:4000]
+        try:
+            response = await self._llm.complete(
+                system=REPLAN_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": f"TRANSCRIPT:\n{transcript}"}],
+                max_tokens=400,
+            )
+        except Exception as exc:
+            logger.warning("agent_loop_replan_failed", brain_id=brain_id, error=str(exc))
+            return None, None
+
+        parsed = _extract_replan_json(response.text)
+        if not parsed or parsed.get("converging", True):
+            return None, response
+
+        revised = str(parsed.get("revised_approach", "")).strip()
+        if not revised:
+            return None, response
+
+        if self._observer is not None:
+            await self._observer.record(
+                AuditEventType.AGENT_LOOP_REPLANNED,
+                source=brain_id,
+                context_id=context_id,
+                message=revised[:160],
+                data={"reason": reason},
+            )
+        return f"{system_prompt}\n\nSELF-CRITIQUE — REVISED APPROACH:\n{revised}", response
 
     async def _report_llm_failure(
         self, brain_id: str, context_id: str, exc: Exception
