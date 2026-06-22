@@ -204,7 +204,7 @@ export function ParticleField({
     <canvas
       ref={canvasRef}
       aria-hidden
-      className={`pointer-events-none absolute inset-0 ${className}`}
+      className={`pointer-events-none absolute -inset-[9%] ${className}`}
     />
   );
 }

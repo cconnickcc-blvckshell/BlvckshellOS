@@ -97,11 +97,12 @@ export function BlvckbotCore({
         }
       }}
     >
-      {/* Ambient bloom — soft CSS blur behind the instrument, screen-blended for additive light */}
+      {/* Ambient bloom — soft CSS blur behind the instrument, screen-blended for additive light.
+          Bleeds well past the orb's own box so the glow fades into the room instead of stopping at a hard edge. */}
       <motion.div
         aria-hidden
-        className="pointer-events-none absolute inset-0 rounded-full blur-3xl mix-blend-screen"
-        style={{ background: `radial-gradient(circle, ${hue}66 0%, transparent 65%)` }}
+        className="pointer-events-none absolute -inset-[10%] rounded-full blur-3xl mix-blend-screen"
+        style={{ background: `radial-gradient(circle, ${hue}66 0%, transparent 60%)` }}
         animate={{
           opacity: active ? [0.45, 0.9, 0.45] : [0.2, 0.4, 0.2],
           scale: state === "listening" ? [0.9 + amp * 0.1, 1.12 + amp * 0.2, 0.9 + amp * 0.1] : [0.92, 1.06, 0.92],

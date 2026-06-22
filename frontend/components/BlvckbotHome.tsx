@@ -186,7 +186,7 @@ export function BlvckbotHome() {
       <div className="flex min-w-0 flex-1 flex-col md:w-[55%]">
         <div
           ref={coreRef}
-          className="relative flex flex-1 flex-col items-center justify-center px-4 pt-4"
+          className="relative flex flex-1 flex-col items-center justify-center px-8 pt-10"
           onDragEnter={() => setDropActive(true)}
           onDragLeave={() => setDropActive(false)}
         >
