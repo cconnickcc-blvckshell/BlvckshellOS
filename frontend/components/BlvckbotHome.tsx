@@ -194,6 +194,7 @@ export function BlvckbotHome() {
             state={coreState}
             delegatingTo={delegatingTo}
             micAmplitude={micAmplitude}
+            speechText={streamingContent}
             dropActive={dropActive}
             className="w-full max-w-[min(100%,320px)] aspect-square"
             onDrop={(files) => {

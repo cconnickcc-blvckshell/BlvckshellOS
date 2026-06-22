@@ -2,10 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import type { CoreState } from "./BlvckbotCore";
+import type { PulseTracker } from "@/lib/speechPulse";
 
 export interface ParticleFieldProps {
   state: CoreState;
   micAmplitude?: number;
+  pulseTracker?: PulseTracker;
   color: string;
   accentColor?: string;
   className?: string;
@@ -32,9 +34,35 @@ const SPEED_MULTIPLIER: Record<CoreState, number> = {
   error: 1.1,
 };
 
+function hexToRgb(hex: string) {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(full, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function makeGlowSprite(hex: string) {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  const { r, g, b } = hexToRgb(hex);
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.16, `rgba(${r},${g},${b},0.95)`);
+  grad.addColorStop(0.5, `rgba(${r},${g},${b},0.35)`);
+  grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return canvas;
+}
+
 export function ParticleField({
   state,
   micAmplitude = 0,
+  pulseTracker,
   color,
   accentColor = "#22D3EE",
   className = "",
@@ -43,9 +71,9 @@ export function ParticleField({
   const particlesRef = useRef<Particle[]>([]);
   const ampRef = useRef(0);
   const stateRef = useRef(state);
-  const colorRef = useRef(color);
-  const accentRef = useRef(accentColor);
-  const startRef = useRef(performance.now());
+  const spriteRef = useRef<HTMLCanvasElement | null>(null);
+  const accentSpriteRef = useRef<HTMLCanvasElement | null>(null);
+  const trailsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
     stateRef.current = state;
@@ -54,10 +82,10 @@ export function ParticleField({
     ampRef.current = Math.min(1, Math.max(0, micAmplitude));
   }, [micAmplitude]);
   useEffect(() => {
-    colorRef.current = color;
+    spriteRef.current = makeGlowSprite(color);
   }, [color]);
   useEffect(() => {
-    accentRef.current = accentColor;
+    accentSpriteRef.current = makeGlowSprite(accentColor);
   }, [accentColor]);
 
   useEffect(() => {
@@ -69,7 +97,7 @@ export function ParticleField({
         baseRadius: 58 + Math.random() * 82,
         radiusJitter: 4 + Math.random() * 14,
         speed: (0.08 + Math.random() * 0.22) * (Math.random() < 0.5 ? 1 : -1),
-        size: 0.6 + Math.random() * 1.8,
+        size: 1.2 + Math.random() * 2.6,
         phase: Math.random() * Math.PI * 2,
         accent: Math.random() < 0.22,
       });
@@ -118,18 +146,17 @@ export function ParticleField({
       const active = cur !== "idle";
 
       let amp = ampRef.current;
-      if (cur === "speaking") {
-        const t = (now - startRef.current) / 1000;
-        amp =
-          0.45 +
-          0.4 * Math.sin(t * 5.2) +
-          0.25 * Math.sin(t * 11.3 + 1.7) * Math.sin(t * 1.3);
-        amp = Math.min(1, Math.max(0, amp));
+      if (cur === "speaking" && pulseTracker) {
+        amp = Math.min(1, 0.18 + pulseTracker.sample(now) * 0.95);
       } else if (cur !== "listening") {
         amp = 0.15;
       }
 
-      for (const p of particlesRef.current) {
+      const sprite = spriteRef.current;
+      const accentSprite = accentSpriteRef.current;
+
+      for (let idx = 0; idx < particlesRef.current.length; idx++) {
+        const p = particlesRef.current[idx];
         p.angle += p.speed * speedMul * dt;
         const wobble =
           Math.sin(now / 1000 + p.phase) * p.radiusJitter * (0.3 + amp * 1.4);
@@ -137,14 +164,28 @@ export function ParticleField({
         const x = cx + Math.cos(p.angle) * r;
         const y = cy + Math.sin(p.angle) * r * 0.94;
 
-        const size = p.size * scale * (1 + amp * 0.8);
-        const alpha = (active ? 0.35 : 0.18) + amp * 0.45;
+        const size = p.size * scale * (1 + amp * 1.1);
+        const alpha = (active ? 0.5 : 0.3) + amp * 0.5;
 
-        ctx.beginPath();
-        ctx.fillStyle = p.accent ? accentRef.current : colorRef.current;
+        // Faint motion trail so particles read as streaks of energy, not dots.
+        const prev = trailsRef.current.get(idx);
+        if (prev) {
+          ctx.strokeStyle = p.accent ? accentColor : color;
+          ctx.globalAlpha = Math.min(0.4, alpha * 0.4);
+          ctx.lineWidth = Math.max(0.5, size * 0.5);
+          ctx.beginPath();
+          ctx.moveTo(prev.x, prev.y);
+          ctx.lineTo(x, y);
+          ctx.stroke();
+        }
+        trailsRef.current.set(idx, { x, y });
+
+        const glow = sprite && (p.accent ? accentSprite : sprite);
         ctx.globalAlpha = Math.min(1, alpha);
-        ctx.arc(x, y, Math.max(0.4, size), 0, Math.PI * 2);
-        ctx.fill();
+        const draw = size * 7;
+        if (glow) {
+          ctx.drawImage(glow, x - draw / 2, y - draw / 2, draw, draw);
+        }
       }
 
       ctx.globalAlpha = 1;
@@ -157,7 +198,7 @@ export function ParticleField({
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, []);
+  }, [color, accentColor, pulseTracker]);
 
   return (
     <canvas

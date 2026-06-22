@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { ParticleField } from "./ParticleField";
+import { VoiceWaveform } from "./VoiceWaveform";
+import { createPulseTracker } from "@/lib/speechPulse";
 
 export type CoreState =
   | "idle"
@@ -16,6 +19,7 @@ export interface BlvckbotCoreProps {
   state: CoreState;
   delegatingTo?: string;
   micAmplitude?: number;
+  speechText?: string | null;
   dropActive?: boolean;
   className?: string;
   onDrop?: (files: FileList) => void;
@@ -52,6 +56,7 @@ export function BlvckbotCore({
   state,
   delegatingTo,
   micAmplitude = 0,
+  speechText = null,
   dropActive = false,
   className = "",
   onDrop,
@@ -60,6 +65,20 @@ export function BlvckbotCore({
   const active = state !== "idle";
   const amp = Math.min(1, Math.max(0, micAmplitude));
   const hue = STATE_COLOR[state];
+  const pulseTracker = useRef(createPulseTracker()).current;
+  const prevWordCountRef = useRef(0);
+
+  useEffect(() => {
+    if (state !== "speaking" || !speechText) {
+      prevWordCountRef.current = 0;
+      return;
+    }
+    const count = speechText.trim().split(/\s+/).filter(Boolean).length;
+    if (count > prevWordCountRef.current) {
+      pulseTracker.push(1);
+      prevWordCountRef.current = count;
+    }
+  }, [state, speechText, pulseTracker]);
 
   return (
     <div
@@ -100,6 +119,7 @@ export function BlvckbotCore({
       <ParticleField
         state={state}
         micAmplitude={amp}
+        pulseTracker={pulseTracker}
         color={hue}
         accentColor="#22D3EE"
         className="mix-blend-screen"
@@ -318,6 +338,15 @@ export function BlvckbotCore({
           );
         })}
       </svg>
+
+      {state === "speaking" && (
+        <VoiceWaveform
+          pulseTracker={pulseTracker}
+          active={state === "speaking"}
+          color={hue}
+          className="absolute -bottom-1 h-7 w-2/3"
+        />
+      )}
 
       {dropActive && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
