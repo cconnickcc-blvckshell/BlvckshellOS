@@ -115,13 +115,22 @@ export function ParticleField({
     let raf = 0;
     let last = performance.now();
 
+    // Canvas is a replaced element, so CSS inset percentages don't stretch it like a div —
+    // size and position the bleed explicitly here instead.
+    const BLEED = 0.09;
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
       const rect = parent.getBoundingClientRect();
-      canvas.width = Math.max(1, rect.width * dpr);
-      canvas.height = Math.max(1, rect.height * dpr);
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
+      const bleedW = rect.width * BLEED;
+      const bleedH = rect.height * BLEED;
+      const w = rect.width + bleedW * 2;
+      const h = rect.height + bleedH * 2;
+      canvas.style.left = `${-bleedW}px`;
+      canvas.style.top = `${-bleedH}px`;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      canvas.width = Math.max(1, w * dpr);
+      canvas.height = Math.max(1, h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
@@ -204,7 +213,7 @@ export function ParticleField({
     <canvas
       ref={canvasRef}
       aria-hidden
-      className={`pointer-events-none absolute -inset-[9%] ${className}`}
+      className={`pointer-events-none absolute ${className}`}
     />
   );
 }
