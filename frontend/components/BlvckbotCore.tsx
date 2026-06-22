@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
+import { ParticleField } from "./ParticleField";
 
 export type CoreState =
   | "idle"
@@ -94,6 +95,14 @@ export function BlvckbotCore({
         style={{ background: `radial-gradient(circle, #ffffff80 0%, ${hue}88 40%, transparent 75%)` }}
         animate={{ opacity: [0.5, 1, 0.5] }}
         transition={{ repeat: Infinity, duration: state === "listening" ? 0.8 : 2.4, ease: "easeInOut" }}
+      />
+
+      <ParticleField
+        state={state}
+        micAmplitude={amp}
+        color={hue}
+        accentColor="#22D3EE"
+        className="mix-blend-screen"
       />
 
       {/* Radar sweep — conic gradient ring, additive */}
