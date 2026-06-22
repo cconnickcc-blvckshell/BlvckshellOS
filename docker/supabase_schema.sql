@@ -90,3 +90,53 @@ create table if not exists conversations (
 
 create index if not exists conversations_session_idx on conversations (session_id);
 create index if not exists conversations_created_idx on conversations (created_at desc);
+
+-- ============================================================================
+-- Memory Notes: durable, semantically searchable summaries distilled from
+-- conversations. Embeddings are stored as plain jsonb float arrays — no
+-- pgvector dependency. Similarity ranking happens in Python over a bounded
+-- recent-rows candidate set, the same fallback shape as the ilike keyword
+-- search above.
+-- Schema mirrors harness.schemas.memory.MemoryNote.
+-- ============================================================================
+create table if not exists memory_notes (
+    id               uuid primary key,
+    session_id       text        not null,
+    operator_id      text,
+    content          text        not null,
+    topics           jsonb       not null default '[]'::jsonb,
+    embedding        jsonb       not null default '[]'::jsonb,
+    created_at       timestamptz not null default now(),
+    source_entry_ids jsonb       not null default '[]'::jsonb
+);
+
+create index if not exists idx_notes_operator on memory_notes (operator_id);
+create index if not exists idx_notes_created  on memory_notes (created_at desc);
+
+-- ============================================================================
+-- Memory Opinions: synthesized, explicitly revisable standing positions.
+-- Unlike doctrine, never validated against outcomes — revised in place by
+-- retiring the old row (retired = true, superseded_by = new id) and
+-- inserting the replacement (supersedes = old id), so the full arc of how a
+-- view changed is preserved.
+-- Schema mirrors harness.schemas.memory.Opinion.
+-- ============================================================================
+create table if not exists memory_opinions (
+    id              uuid primary key,
+    operator_id     text,
+    topic           text        not null,
+    statement       text        not null,
+    reasoning       text        not null,
+    confidence      double precision not null check (confidence >= 0 and confidence <= 1),
+    embedding       jsonb       not null default '[]'::jsonb,
+    source_note_ids jsonb       not null default '[]'::jsonb,
+    supersedes      uuid,
+    superseded_by   uuid,
+    retired         boolean     not null default false,
+    created_at      timestamptz not null default now(),
+    changelog       jsonb       not null default '[]'::jsonb
+);
+
+create index if not exists idx_opinions_operator on memory_opinions (operator_id);
+create index if not exists idx_opinions_retired  on memory_opinions (retired);
+create index if not exists idx_opinions_created  on memory_opinions (created_at desc);

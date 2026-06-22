@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from harness.schemas.judgment import JudgmentEntry
+from harness.schemas.memory import MemoryNote, Opinion
 
 
 def _now() -> datetime:
@@ -73,6 +74,8 @@ class BrainContext(BaseModel):
         recent_judgments: Recent relevant Judgment Ledger entries.
         doctrine: Validated beliefs relevant to the task.
         history: Prior messages/results in this pipeline run.
+        notes: Personal memory notes relevant to the current request.
+        opinions: Standing opinions relevant to the current request.
     """
 
     context_id: str
@@ -81,3 +84,5 @@ class BrainContext(BaseModel):
     recent_judgments: list[JudgmentEntry] = Field(default_factory=list)
     doctrine: list[JudgmentEntry] = Field(default_factory=list)
     history: list[dict[str, Any]] = Field(default_factory=list)
+    notes: list[MemoryNote] = Field(default_factory=list)
+    opinions: list[Opinion] = Field(default_factory=list)

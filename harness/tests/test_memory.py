@@ -6,7 +6,10 @@ from memory.context_store import InMemoryContextStore
 from memory.conversation_store import InMemoryConversationStore
 from memory.doctrine_store import InMemoryDoctrineStore
 from memory.judgment_ledger import InMemoryJudgmentLedger
+from memory.notes_store import InMemoryNotesStore
+from memory.opinions_store import InMemoryOpinionsStore
 
+from harness.core.embeddings import HashEmbeddingClient
 from harness.core.memory import SharedMemory
 from harness.schemas.judgment import JudgmentEntry, OutcomeRecord
 
@@ -17,6 +20,9 @@ def _memory() -> SharedMemory:
         ledger=InMemoryJudgmentLedger(),
         doctrine=InMemoryDoctrineStore(),
         conversations=InMemoryConversationStore(),
+        notes=InMemoryNotesStore(),
+        opinions=InMemoryOpinionsStore(),
+        embeddings=HashEmbeddingClient(),
     )
 
 

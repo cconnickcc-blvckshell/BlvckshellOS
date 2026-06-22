@@ -34,6 +34,7 @@ from harness.core.observer import (
     SupabaseAuditStore,
 )
 from harness.core.orchestrator import Orchestrator
+from harness.core.reflection import run_reflection
 from harness.core.registry import build_registry
 from harness.core.router import PipelineRouter
 from harness.logging_config import configure_logging, get_logger
@@ -186,6 +187,26 @@ class Harness:
             asyncio.create_task(self._handle_pipeline_failure(objective_id, exc))
 
         task.add_done_callback(_on_done)
+        return task
+
+    def spawn_reflection(self, session_id: str, *, operator_id: str | None = None) -> asyncio.Task:
+        """Run the reflection job in the background after a chat response.
+
+        Fire-and-forget by design: reflection updates durable notes/opinions
+        but must never add latency to the live chat response.
+        """
+        task = asyncio.create_task(
+            run_reflection(
+                self.memory,
+                self.llm,
+                session_id,
+                operator_id=operator_id,
+                model=self.settings.anthropic_model,
+            ),
+            name=f"reflection:{session_id}",
+        )
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
         return task
 
     async def _handle_pipeline_failure(self, objective_id: str, exc: BaseException) -> None:
@@ -390,6 +411,8 @@ class Harness:
                 status_code=500,
                 data={"task_id": result.task_id},
             )
+
+        self.spawn_reflection(sid)
 
         return {
             "response": result.output.get("response", result.summary),

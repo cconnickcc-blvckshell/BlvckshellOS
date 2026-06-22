@@ -164,6 +164,47 @@ def create_app() -> FastAPI:
         entries = await get_harness().memory.doctrine.list_active(limit=limit)
         return [e.model_dump(mode="json") for e in entries]
 
+    @app.get("/memory/notes", tags=["memory"])
+    async def list_notes(
+        operator_id: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> list[dict[str, Any]]:
+        """Return recent durable memory notes, newest first."""
+        entries = await get_harness().memory.notes.list_recent(operator_id=operator_id, limit=limit)
+        return [e.model_dump(mode="json") for e in entries]
+
+    @app.get("/memory/opinions", tags=["memory"])
+    async def list_opinions(
+        operator_id: str | None = Query(default=None),
+        include_retired: bool = Query(default=False),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> list[dict[str, Any]]:
+        """Return standing opinions, newest first (active only by default)."""
+        if include_retired:
+            entries = await get_harness().memory.opinions.list_all(
+                operator_id=operator_id, limit=limit
+            )
+        else:
+            entries = await get_harness().memory.opinions.list_active(
+                operator_id=operator_id, limit=limit
+            )
+        return [e.model_dump(mode="json") for e in entries]
+
+    @app.get("/memory/search", tags=["memory"])
+    async def search_memory(
+        q: str = Query(min_length=1),
+        operator_id: str | None = Query(default=None),
+        limit: int = Query(default=5, ge=1, le=50),
+    ) -> dict[str, Any]:
+        """Semantically search notes and opinions for the given query."""
+        memory = get_harness().memory
+        notes = await memory.recall_notes(q, operator_id=operator_id, limit=limit)
+        opinions = await memory.recall_opinions(q, operator_id=operator_id, limit=limit)
+        return {
+            "notes": [n.model_dump(mode="json") for n in notes],
+            "opinions": [o.model_dump(mode="json") for o in opinions],
+        }
+
     @app.get("/observer/events", tags=["observer"])
     async def observer_events(
         context_id: str | None = Query(default=None),

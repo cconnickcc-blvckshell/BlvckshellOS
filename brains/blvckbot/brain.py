@@ -33,6 +33,9 @@ Your memory:
 - Full conversation history with the operator
 - All past judgments and their outcomes
 - Accumulated doctrine — beliefs proven correct over time
+- Durable notes from past conversations, recalled when relevant
+- Standing opinions you've formed about the operator and the work — revise
+  them explicitly when new evidence warrants it, rather than just adding more
 - What each specialist brain has done and how well
 
 How you operate:
@@ -71,9 +74,11 @@ class BlvckbotBrain(BaseBrain):
     )
     max_iterations = 4
 
-    async def get_context(self, context_id: str) -> BrainContext:
-        """Load working context plus recent judgments and doctrine."""
-        return await self.runtime.memory.load_context(context_id, self.brain_id, judgment_limit=30)
+    async def get_context(self, context_id: str, *, query: str | None = None) -> BrainContext:
+        """Load working context plus recent judgments, doctrine, notes, and opinions."""
+        return await self.runtime.memory.load_context(
+            context_id, self.brain_id, judgment_limit=30, query=query
+        )
 
     async def log_judgment(self, entry: JudgmentEntry) -> None:
         """Record a belief to the Judgment Ledger."""
@@ -87,7 +92,7 @@ class BlvckbotBrain(BaseBrain):
             or parsed.inputs.get("session_id")
             or await self.runtime.memory.conversations.get_or_create_session("operator")
         )
-        context = await self.get_context(task.context_id)
+        context = await self.get_context(task.context_id, query=parsed.objective)
         history = await self.runtime.memory.conversations.get_history(session_id, limit=50)
         registry_brains = await self.runtime.registry.list_all()
 
@@ -238,6 +243,14 @@ class BlvckbotBrain(BaseBrain):
             or "- (none)"
         )
         attachment_block = self._format_attachments(task.inputs.get("attachments") or [])
+        notes = "\n".join(f"- {n.content[:160]}" for n in context.notes[:5]) or "- (none)"
+        opinions = (
+            "\n".join(
+                f"- [{o.topic}] {o.statement[:160]} (confidence={o.confidence})"
+                for o in context.opinions[:5]
+            )
+            or "- (none)"
+        )
         return (
             f"OPERATOR REQUEST:\n{task.objective}\n\n"
             f"{attachment_block}"
@@ -245,6 +258,8 @@ class BlvckbotBrain(BaseBrain):
             f"AVAILABLE SPECIALIST BRAINS:\n{capabilities}\n\n"
             f"RECENT JUDGMENTS:\n{judgments}\n\n"
             f"DOCTRINE:\n{doctrine}\n\n"
+            f"MEMORY NOTES:\n{notes}\n\n"
+            f"STANDING OPINIONS:\n{opinions}\n\n"
             "Reason through the request. State your plan. Recommend PROCEED, "
             "STAGED_PROCEED, REQUEST_MORE_EVIDENCE, or HOLD explicitly."
         )

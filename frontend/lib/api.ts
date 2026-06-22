@@ -103,6 +103,36 @@ export interface ChatResponse {
   judgment_ids: string[];
 }
 
+export interface MemoryNote {
+  id: string;
+  session_id: string;
+  operator_id?: string | null;
+  content: string;
+  topics: string[];
+  created_at: string;
+  source_entry_ids: string[];
+}
+
+export interface Opinion {
+  id: string;
+  operator_id?: string | null;
+  topic: string;
+  statement: string;
+  reasoning: string;
+  confidence: number;
+  source_note_ids: string[];
+  supersedes?: string | null;
+  superseded_by?: string | null;
+  retired: boolean;
+  created_at: string;
+  changelog: Array<{ action: string; timestamp: string; details?: Record<string, unknown> }>;
+}
+
+export interface MemorySearchResult {
+  notes: MemoryNote[];
+  opinions: Opinion[];
+}
+
 export interface OutcomeRecord {
   actual_outcome: string;
   outcome_quality: number;
@@ -279,6 +309,11 @@ export const api = {
   doctrine: () => get<Judgment[]>("/doctrine"),
   events: () => get<AuditEvent[]>("/observer/events"),
   streamUrl: () => `${HARNESS_URL}/observer/stream`,
+  memoryNotes: () => get<MemoryNote[]>("/memory/notes"),
+  opinions: (includeRetired = false) =>
+    get<Opinion[]>(`/memory/opinions${includeRetired ? "?include_retired=true" : ""}`),
+  searchMemory: (q: string) =>
+    get<MemorySearchResult>(`/memory/search?q=${encodeURIComponent(q)}`),
   sendChatMessage,
   getChatHistory,
   getChatSessions,

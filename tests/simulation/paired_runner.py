@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from harness.core.agent_loop import AgentLoopResult
+from harness.core.embeddings import HashEmbeddingClient
 from harness.core.memory import SharedMemory
 from harness.schemas.brain_info import BrainContext
 from harness.schemas.task import Task
@@ -16,6 +17,9 @@ from memory.context_store import InMemoryContextStore
 from memory.conversation_store import InMemoryConversationStore
 from memory.doctrine_store import InMemoryDoctrineStore
 from memory.judgment_ledger import InMemoryJudgmentLedger
+from memory.notes_store import InMemoryNotesStore
+from memory.opinions_store import InMemoryOpinionsStore
+
 from tests.simulation.federation.archetypes import FederationArchetype
 
 
@@ -176,6 +180,9 @@ async def run_paired_experiment(
         ledger=InMemoryJudgmentLedger(),
         doctrine=InMemoryDoctrineStore(),
         conversations=InMemoryConversationStore(),
+        notes=InMemoryNotesStore(),
+        opinions=InMemoryOpinionsStore(),
+        embeddings=HashEmbeddingClient(),
     )
     await memory.connect()
     if seed_poor_outcomes:

@@ -70,6 +70,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
+    openai_embedding_model: str = "text-embedding-3-small"
 
     ollama_base_url: str | None = None
     ollama_url: str | None = None

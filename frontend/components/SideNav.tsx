@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/pipelines", label: "Pipelines", glyph: "⟁" },
   { href: "/ledger", label: "Ledger", glyph: "≣" },
   { href: "/doctrine", label: "Doctrine", glyph: "✦" },
+  { href: "/memory", label: "Memory", glyph: "❖" },
   { href: "/observer", label: "Observer", glyph: "⊚" },
 ];
 

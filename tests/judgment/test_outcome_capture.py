@@ -5,12 +5,15 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 from harness.config import get_settings
+from harness.core.embeddings import HashEmbeddingClient
 from harness.core.memory import DOCTRINE_PROMOTION_THRESHOLD, SharedMemory
 from harness.schemas.judgment import JudgmentEntry, OutcomeRecord
 from memory.context_store import InMemoryContextStore
 from memory.conversation_store import InMemoryConversationStore
 from memory.doctrine_store import InMemoryDoctrineStore
 from memory.judgment_ledger import InMemoryJudgmentLedger
+from memory.notes_store import InMemoryNotesStore
+from memory.opinions_store import InMemoryOpinionsStore
 
 
 @pytest.fixture
@@ -21,6 +24,9 @@ def memory() -> SharedMemory:
         ledger=InMemoryJudgmentLedger(),
         doctrine=InMemoryDoctrineStore(),
         conversations=InMemoryConversationStore(),
+        notes=InMemoryNotesStore(),
+        opinions=InMemoryOpinionsStore(),
+        embeddings=HashEmbeddingClient(),
     )
 
 
