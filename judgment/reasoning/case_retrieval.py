@@ -1,10 +1,11 @@
-"""Keyword-based case retrieval from the judgment ledger."""
+"""Case retrieval from the judgment ledger, ranked by semantic similarity."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
+from harness.core.embeddings import EmbeddingClient, cosine_similarity
 from harness.schemas.judgment import JudgmentEntry
 
 from judgment.outcome import JudgmentOutcome
@@ -56,10 +57,14 @@ async def retrieve_cases(
     domain: str,
     limit: int = 10,
     min_confidence: float = 0.5,
+    embeddings: EmbeddingClient | None = None,
 ) -> list[CaseRecord]:
     """Query the ledger for similar past decisions.
 
-    TODO: upgrade to semantic similarity in Phase 2.
+    Candidates are gathered by keyword match (and, when ``embeddings`` is
+    supplied, by recency too, since semantic matches need not share tokens
+    with ``belief_keyword``). Ranking uses cosine similarity over embeddings
+    when ``embeddings`` is provided, falling back to token overlap otherwise.
     """
     tokens = [t for t in re.findall(r"[a-z0-9]+", belief_keyword.lower()) if len(t) > 3]
     search_terms = tokens[:3] if tokens else [belief_keyword.lower()]
@@ -70,16 +75,26 @@ async def retrieve_cases(
             if entry.id not in seen:
                 seen.add(entry.id)
                 raw.append(entry)
+    if embeddings is not None:
+        for entry in await ledger.list_recent(limit=limit * 5):
+            if entry.id not in seen:
+                seen.add(entry.id)
+                raw.append(entry)
+
+    query_embedding = await embeddings.embed(belief_keyword) if embeddings is not None else None
+
     cases: list[CaseRecord] = []
     for entry in raw:
         if entry.confidence < min_confidence:
             continue
-        if entry.brain_id != domain and domain not in entry.belief.lower():
-            similarity = _keyword_overlap(entry.belief, belief_keyword)
-            if similarity < 0.2:
-                continue
+        same_domain = entry.brain_id == domain or domain in entry.belief.lower()
+        if query_embedding is not None:
+            entry_embedding = await embeddings.embed(entry.belief)
+            similarity = cosine_similarity(query_embedding, entry_embedding)
         else:
             similarity = _keyword_overlap(entry.belief, belief_keyword)
+        if not same_domain and similarity < 0.2:
+            continue
         cases.append(
             CaseRecord(
                 judgment_id=entry.id,

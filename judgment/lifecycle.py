@@ -77,6 +77,7 @@ class JudgmentLifecycle:
                 belief_keyword=belief_keyword,
                 domain=profile.domain,
                 limit=10,
+                embeddings=memory.embeddings,
             )
             ctx.retrieved_cases = cases
             ctx.evidence_prompt_suffix = format_cases_for_prompt(cases)

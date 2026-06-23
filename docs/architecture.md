@@ -139,7 +139,7 @@ OBSERVATION → BELIEF → CONFIDENCE → CHALLENGE → EVIDENCE → FORECAST �
 |--------------|-------------------------------------|----------------------------------------------|
 | Confidence   | `judgment/stages/confidence.py`     | Doctrine + ledger outcome adjustment (J9)    |
 | Exploration  | `judgment/stages/exploration.py`    | UCB bandit + opportunity cost signal (J11)   |
-| Case recall  | `judgment/reasoning/case_retrieval.py` | Keyword lesson recall into Evidence (J12) |
+| Case recall  | `judgment/reasoning/case_retrieval.py` | Semantic-similarity lesson recall into Evidence (J12) |
 | Learning     | `judgment/stages/learning.py`       | Post-outcome Bayesian belief update (J10)    |
 
 Guards (authoritative, not observational):
