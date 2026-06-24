@@ -47,3 +47,4 @@ services:
     name: blvckshell-redis
     plan: free
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
