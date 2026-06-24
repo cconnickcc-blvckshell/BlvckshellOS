@@ -63,6 +63,7 @@ class Settings(BaseSettings):
             "brains.blvckbot.research:ResearchBrain,"
             "brains.blvckbot.proposal:ProposalBrain,"
             "brains.blvckbot.build:BuildBrain,"
+            "brains.blvckbot.ops:OpsBrain,"
             "brains.examples.venture:VentureBrain,"
             "brains.examples.commander:CommanderBrain,"
             "brains.examples.capital:CapitalBrain"
