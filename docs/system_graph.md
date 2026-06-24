@@ -41,6 +41,15 @@ graph LR
         venture[examples/venture]
         commander[examples/commander]
         capital[examples/capital]
+        bbbase[blvckbot/brain\nBlvckbotBrain coordinator]
+        research[blvckbot/research]
+        proposal[blvckbot/proposal]
+        build[blvckbot/build]
+        ops[blvckbot/ops]
+    end
+
+    subgraph integrations["integrations"]
+        upwork[upwork_client]
     end
 
     subgraph memstore["memory (backends)"]
@@ -65,7 +74,11 @@ graph LR
     base --> bus & registry & memory & observer & llm & agentloop & tools
     loader --> base
     venture & commander & capital --> base
+    bbbase --> base
+    research & proposal & build & ops --> base
+    research --> upwork
     harness --> loader & orch & router & bus & registry & memory & observer & llm & base
+    harness --> research
     api --> harness & intake
     intake --> harness
 ```
@@ -91,15 +104,26 @@ graph TB
     WK --> B1[VentureBrain]
     WK --> B2[CommanderBrain]
     WK --> B3[CapitalBrain]
-    B1 & B2 & B3 -.share.-> RT
+    WK --> B4[BlvckbotBrain\ncoordinator]
+    WK --> B5[ResearchBrain]
+    WK --> B6[ProposalBrain]
+    WK --> B7[BuildBrain]
+    WK --> B8[OpsBrain]
+    B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8 -.share.-> RT
     H -.per run.-> ROUTER[PipelineRouter]
     ROUTER --> ORCH
     ROUTER --> BUS
+    H -.direct tool call, no bus.-> B5
 ```
 
 All workers share one `BrainRuntime`. The `Orchestrator` is owned by the harness
 and is **not** in `workers` and **not** in the registry. A fresh `PipelineRouter`
-is created per run.
+is created per run. `BlvckbotBrain` and the four freelance-agent brains
+(`pipeline_participant=False`) load alongside the routable workers but are
+never targets of generic intake routing — `BlvckbotBrain` is reached via
+`/chat`, `ResearchBrain`'s tools are reached directly by the harness for
+`/leads/fiverr`, and `ProposalBrain`/`BuildBrain`/`OpsBrain` are reached via
+explicit sub-agent spawns or capability dispatch.
 
 ---
 

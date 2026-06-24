@@ -43,7 +43,7 @@ curl -s -X POST localhost:8000/intake \
 ## 3. Test & lint
 
 ```bash
-pytest                 # 82 tests, ~90% coverage (>= 85% required)
+pytest                 # 156 tests, 84% coverage (target >= 85%; not yet enforced by CI)
 pytest tests/test_sub_agent.py -q     # one area
 ruff check .           # must be clean
 ```
@@ -101,10 +101,12 @@ Add a route in `harness/api/main.py` (or a router under `intake/`).
 | `USE_IN_MEMORY_BUS` | `false` | In-process bus/memory/registry (no Redis). |
 | `USE_FAKE_LLM` | `false` | Deterministic offline LLM. |
 | `RUN_WORKERS_IN_PROCESS` | `true` | Single-process vs. distributed brains. |
-| `WORKER_BRAIN_MODULES` | venture,commander,capital | Brains to load (`module:Class`). |
+| `WORKER_BRAIN_MODULES` | blvckbot, research, proposal, build, ops, venture, commander, capital | Brains to load (`module:Class`). |
 | `REDIS_URL` | `redis://localhost:6379/0` | Bus + working memory. |
 | `SUPABASE_URL` / `SUPABASE_KEY` | — | Ledger/doctrine/audit persistence. |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / sonnet | Real inference. |
+| `UPWORK_CLIENT_ID` / `UPWORK_CLIENT_SECRET` | — | Upwork OAuth2 app credentials (Research Brain). |
+| `UPWORK_REDIRECT_URI` / `UPWORK_REFRESH_TOKEN` | — | Upwork OAuth2 redirect URI / long-lived refresh token. |
 
 Full list with descriptions: `.env.example` and `harness/config.py`.
 
@@ -158,11 +160,14 @@ harness/core/      engine (orchestrator, router, bus, registry, memory, observer
 harness/api/       FastAPI app
 brains/_base/      BaseBrain + tools (the plugin contract, incl. spawn_agent)
 brains/examples/   Venture, Commander, Capital
+brains/blvckbot/   Blvckbot coordinator (/chat) + freelance-agent brains
+                   (Research, Proposal, Build, Ops) — pipeline_participant=False
+integrations/      Upwork client (OAuth2 + GraphQL job search)
 memory/            context / judgment-ledger / doctrine backends
 intake/            text / voice / API capture
 scripts/           run_brain, seed_db, register_brain
 docker/            Dockerfiles, compose, Supabase schema
-frontend/          Next.js command interface
+frontend/          Next.js command interface (incl. /leads dashboard)
 docs/              architecture, message_protocol, brain_sdk, workflows,
                    file_reference, system_graph, dev_handoff (this file)
 ```

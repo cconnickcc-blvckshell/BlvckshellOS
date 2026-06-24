@@ -58,6 +58,52 @@ class ResearchBrain(LLMBrain):
 
 You can also subclass `BaseTool` directly and implement `async def run(self, arguments)`.
 
+### Tools that need a runtime-bound client
+
+If a tool needs something constructed per-instance (an API client built from
+`Settings`, for example), override `__init__` and build `self.tools` there
+instead of as a class attribute, binding bound methods as the tool `func`:
+
+```python
+class ResearchBrain(LLMBrain):
+    ...
+    def __init__(self, runtime: BrainRuntime) -> None:
+        super().__init__(runtime)
+        self._upwork = UpworkClient.from_settings(get_settings())
+        self.tools = [
+            FunctionTool(
+                name="upwork_search_jobs",
+                description="Search live Upwork job postings.",
+                input_schema={...},
+                func=self._upwork_search_jobs,  # bound method, closes over self._upwork
+            ),
+            ...
+        ]
+```
+
+`brains/blvckbot/research.py` does exactly this for `UpworkClient` — Upwork
+credentials are read from `Settings`/environment only, never stored in agent
+memory.
+
+## Gating a brain's output behind a human
+
+For brains whose output authorizes a financial or account action, set
+`human_gate_enabled=True` on the brain's `judgment_profile`:
+
+```python
+judgment_profile = JudgmentProfile(
+    domain="ops",
+    human_gate_enabled=True,
+    model=ModelConfig(preferred_model="claude-sonnet-4-6"),
+)
+```
+
+The `human_gate` guard (`judgment/guards/human_gate.py`) then unconditionally
+downgrades `PROCEED`/`STAGED_PROCEED` to `REQUEST_MORE_EVIDENCE`, which maps to
+`ResultStatus.NEEDS_OPERATOR` — the task surfaces in `GET /approvals` until an
+operator calls `POST /judgments/{id}/outcome` to confirm or reject it. The
+blvckbot Proposal, Build, and Ops brains all use this.
+
 ## The full contract: extend `BaseBrain`
 
 For non-LLM or custom brains, extend `BaseBrain` and implement:

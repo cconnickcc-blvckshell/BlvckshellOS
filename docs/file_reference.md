@@ -25,7 +25,7 @@ where relevant).
 
 | File | Purpose | Depends on |
 |------|---------|-----------|
-| `harness.py` | `Harness`: composes every layer, dynamically loads brains, owns the Orchestrator, exposes `run_pipeline`. **Zero brain-specific imports.** | config, llm, memory, message_bus, observer, orchestrator, registry, router, brain_loader, schemas/objective, `brains._base.brain` (contract only) |
+| `harness.py` | `Harness`: composes every layer, dynamically loads brains, owns the Orchestrator, exposes `run_pipeline`. Also `submit_fiverr_lead`/`list_leads` (looks up a worker's tool by string `brain_id`/tool `name` via `_find_tool` — no brain import). **Zero brain-specific imports.** | config, llm, memory, message_bus, observer, orchestrator, registry, router, brain_loader, schemas/objective, `brains._base.brain` (contract only) |
 | `orchestrator.py` | `Orchestrator`: `plan()` + `synthesize()`. Harness-internal; **not a brain**. | llm, memory, observer, registry, orchestrator_prompts, schemas |
 | `orchestrator_prompts.py` | System/planning/synthesis prompt templates for the Orchestrator. | — |
 | `router.py` | `PipelineRouter`: dispatches the plan in dependency waves, collects results, drives synthesis; injects ancestry metadata. | memory, message_bus, observer, orchestrator, schemas |
@@ -45,7 +45,7 @@ where relevant).
 |------|---------|-----------|
 | `config.py` | `Settings` (pydantic-settings, `BLVCKSHELL_` env). Incl. `worker_brain_modules`, `run_workers_in_process`. `get_settings()` cached. | pydantic-settings |
 | `logging_config.py` | structlog setup; `configure_logging()` / `get_logger()`. | structlog |
-| `api/main.py` | FastAPI app: lifespan boots `Harness`; routes for intake/pipelines/brains/ledger/doctrine/observer + SSE. | harness.core.harness, intake.api, fastapi |
+| `api/main.py` | FastAPI app: lifespan boots `Harness`; routes for intake/pipelines/brains/ledger/doctrine/observer + SSE, plus `/leads`, `/leads/fiverr` (human paste-in), and `/approvals` (NEEDS_OPERATOR queue). | harness.core.harness, intake.api, fastapi |
 
 ---
 
@@ -58,9 +58,22 @@ where relevant).
 | `examples/venture.py` | `VentureBrain` — idea validation + a `feasibility_score` tool. | `_base/brain`, `_base/tools` |
 | `examples/commander.py` | `CommanderBrain` — execution planning. | `_base/brain` |
 | `examples/capital.py` | `CapitalBrain` — capital/financial stub. | `_base/brain` |
+| `blvckbot/brain.py` | `BlvckbotBrain` — the primary conversational coordinator (powers `/chat`); extends `BaseBrain` directly (custom `handle_task`, not `LLMBrain`), spawns sub-agents to specialist brains. `pipeline_participant=False`. | `_base/brain`, `harness.core.agent_loop`, `judgment.lifecycle`, `judgment.profile` |
+| `blvckbot/research.py` | `ResearchBrain` — sources Upwork leads (live API) + manually pasted Fiverr leads, scores fit/profitability/client-quality. Runtime `__init__` builds an `UpworkClient`-bound tool. `pipeline_participant=False`. | `_base/brain`, `_base/tools`, `integrations.upwork_client`, `judgment.profile` |
+| `blvckbot/proposal.py` | `ProposalBrain` — drafts proposals for scored leads. `human_gate_enabled=True`, `pipeline_participant=False`. | `_base/brain`, `judgment.profile` |
+| `blvckbot/build.py` | `BuildBrain` — does the work; output reviewed before delivery. `human_gate_enabled=True`, `pipeline_participant=False`. | `_base/brain`, `judgment.profile` |
+| `blvckbot/ops.py` | `OpsBrain` — flags financial/account actions for a human. `human_gate_enabled=True`, `pipeline_participant=False`. | `_base/brain`, `judgment.profile` |
 
 > `brains/ckos/` was **deleted** in the v2 refactor; the orchestrator now lives in
 > `harness/core/orchestrator.py` and is not a brain.
+
+---
+
+## `integrations/` — external service clients
+
+| File | Purpose | Depends on |
+|------|---------|-----------|
+| `upwork_client.py` | `UpworkClient` — OAuth2 token refresh + GraphQL job search against Upwork's v3 API. Credentials come from `Settings`/environment only; the access token is cached in-process and never written to any store. `UpworkAuthError`/`UpworkAPIError`. Endpoint/field names should be confirmed against the registered app's schema before production use. | harness.config, httpx |
 
 ---
 
@@ -112,7 +125,8 @@ where relevant).
 schemas  ◄── memory, core/*, brains/*, intake/*   (leaf; depends on nothing internal)
 core/llm, core/observer, core/message_bus, core/registry, core/memory
          ◄── core/agent_loop, core/orchestrator, core/router, brains/_base
-brains/_base ◄── brains/examples/*, core/brain_loader
+brains/_base ◄── brains/examples/*, brains/blvckbot/*, core/brain_loader
+integrations/* ◄── brains/blvckbot/research.py (no harness/core dependency on integrations/)
 core/harness ◄── api/main, scripts/*
 intake/* ◄── api/main
 ```

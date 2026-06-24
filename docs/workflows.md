@@ -23,11 +23,18 @@ flowchart TB
         OBS[Observer]
         MEM[SharedMemory]
         BUS[MessageBus]
-        subgraph Workers["Worker brains (dynamically loaded)"]
+        subgraph Workers["Worker brains (dynamically loaded, pipeline-routable)"]
             B1[VentureBrain]
             B2[CommanderBrain]
             B3[CapitalBrain]
         end
+        subgraph Blvckbot["Freelance-agent brains (pipeline_participant=False)"]
+            B4[ResearchBrain]
+            B5[ProposalBrain]
+            B6[BuildBrain]
+            B7[OpsBrain]
+        end
+        UPW[UpworkClient\nintegrations/upwork_client.py]
         LLM[LLMClient\nAnthropic / Ollama / Fake]
     end
 
@@ -35,11 +42,13 @@ flowchart TB
         REDIS[(Redis\nbus + working memory)]
         SUPA[(Supabase\nledger + doctrine + audit)]
         ANTH[(Anthropic API)]
+        UPWAPI[(Upwork API)]
     end
 
     UI --> API
     CLI --> API
     API --> INTAKE
+    API -.->|"/leads/fiverr (direct tool call, no bus)"| B4
     INTAKE --> ROUTER
     ROUTER --> ORCH
     ROUTER <--> BUS
@@ -50,8 +59,14 @@ flowchart TB
     B1 & B2 & B3 --> LLM
     B1 & B2 & B3 --> MEM
     B1 & B2 & B3 --> REG
+    B4 & B5 & B6 & B7 --> LLM
+    B4 & B5 & B6 & B7 --> MEM
+    B4 & B5 & B6 & B7 --> REG
+    B4 --> UPW
+    UPW -.-> UPWAPI
     ROUTER --> OBS
     B1 & B2 & B3 --> OBS
+    B4 & B5 & B6 & B7 --> OBS
     ORCH --> OBS
     BUS -.-> REDIS
     MEM -.-> REDIS
@@ -198,6 +213,15 @@ and `intake/api.py`.
 | GET    | `/doctrine`           | `?limit=`                                 | `[JudgmentEntry]` (active) |
 | GET    | `/observer/events`    | `?context_id=&limit=`                      | `[AuditEvent]` (context_id = run_id) |
 | GET    | `/observer/stream`    | —                                         | SSE stream of `AuditEvent` |
+| GET    | `/approvals`          | `?limit=`                                 | `[JudgmentEntry]` (unresolved NEEDS_OPERATOR entries) |
+| GET    | `/leads`              | —                                         | `[Lead]` (manually submitted, newest first) |
+| POST   | `/leads/fiverr`       | `{title, description, budget?, currency?, skills?, engagement_type?, factors?}` | `Lead` (normalized + scored) |
+
+`POST /leads/fiverr` is the only way a Fiverr lead enters the system — Fiverr
+has no API, so this is a human paste-in form (`frontend/app/leads/page.tsx`),
+never a scrape. The harness reuses the Research Brain's `fiverr_manual_intake`
+and `score_lead` tools directly (bypassing the bus/agent loop, since this is a
+deterministic normalize-and-score operation, not an LLM decision).
 
 ### `IntakeResponse`
 

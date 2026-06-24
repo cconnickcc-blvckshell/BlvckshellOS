@@ -148,6 +148,11 @@ Guards (authoritative, not observational):
   `HOLD→PROCEED`, negative ROI, risk above cap, poor similar past outcomes.
 - **Safe divergence** (`judgment/guards/safe_divergence.py`) — tension classes;
   allowlists `PROCEED→STAGED_PROCEED` and `STAGED_PROCEED→REQUEST_MORE_EVIDENCE`.
+- **Human gate** (`judgment/guards/human_gate.py`) — opt-in per brain via
+  `JudgmentProfile(human_gate_enabled=True)`; downgrades `PROCEED` and
+  `STAGED_PROCEED` to `REQUEST_MORE_EVIDENCE` unconditionally, so any
+  financial/account action always lands in the operator's queue
+  (`GET /approvals`) instead of executing on its own.
 
 Every stage emits `consumed_signals` / `ignored_signals` to the Observer
 (`JUDGMENT_STAGE_COMPLETED`). Algorithms must pass federation promotion gates in
@@ -155,6 +160,30 @@ Every stage emits `consumed_signals` / `ignored_signals` to the Observer
 
 See [`v2_incorporation_audit.md`](v2_incorporation_audit.md) for the full
 incorporation tracker and [`archive/`](archive/) for read-only V1 reference docs.
+
+## The freelance-agent pipeline (blvckbot)
+
+`brains/blvckbot/` is a federation of four cooperating brains. Each sets
+`pipeline_participant = False` — the generic intake Orchestrator never
+auto-routes idea pipelines to them; they form their own dedicated
+freelance-agent flow instead:
+
+- **Research** (`research.py`) — finds and scores leads. Upwork access goes
+  through `integrations/upwork_client.py` (credentials come from `Settings`
+  only, never stored in agent memory). Fiverr has no API, so its only lead
+  source is a human paste-in tool (`fiverr_manual_intake`), exposed at
+  `POST /leads/fiverr` — it normalizes and scores text a human supplied; it
+  never scrapes or automates Fiverr.
+- **Proposal** (`proposal.py`) — drafts proposals for scored leads.
+- **Build** (`build.py`) — does the work; output must be reviewed before
+  delivery.
+- **Ops** (`ops.py`) — flags financial/account actions for a human.
+
+Proposal, Build, and Ops all set `JudgmentProfile(human_gate_enabled=True)`,
+so the `human_gate` guard (above) forces their consequential outputs into
+`REQUEST_MORE_EVIDENCE` → `ResultStatus.NEEDS_OPERATOR`. The operator resolves
+each one from the dashboard's "Waiting on you" queue (`frontend/app/leads/page.tsx`)
+via the existing `POST /judgments/{id}/outcome` endpoint.
 
 ## Deployment topologies
 

@@ -46,7 +46,7 @@ synthesizes a final briefing — with the Observer capturing the full trace.
 ## The test that proves it works
 
 ```bash
-poetry run pytest        # 82 tests, ~90% coverage
+poetry run pytest        # 156 tests, 84% coverage
 poetry run ruff check .  # lint
 ```
 
@@ -83,6 +83,16 @@ AgentCall** (`harness/schemas/objective.py`).
 - **Agent loop** — `harness/core/agent_loop.py`. The think/act/observe cycle.
 - **Sub-agents** — `BaseBrain.spawn_agent(...)`. Any brain can spawn a child
   agent for a capability, await it, and use the result.
+- **Freelance-agent brains** — `brains/blvckbot/` (Research, Proposal, Build,
+  Ops). A dedicated flow, separate from generic intake routing
+  (`pipeline_participant = False`), that finds leads, drafts proposals, does
+  the work, and flags financial/account actions for a human — every
+  consequential step is forced through the `human_gate` guard
+  (`judgment/guards/human_gate.py`), which downgrades `PROCEED`/
+  `STAGED_PROCEED` to `REQUEST_MORE_EVIDENCE` so nothing executes
+  unsupervised. Upwork access goes through `integrations/upwork_client.py`;
+  Fiverr has no API, so leads only ever arrive via human paste-in
+  (`POST /leads/fiverr`) — never scraped.
 
 Deep dives:
 [`docs/architecture.md`](docs/architecture.md) ·
@@ -113,6 +123,9 @@ The Orchestrator discovers and routes to it automatically. Full guide in
 | GET    | `/doctrine`                | Promoted doctrine.                       |
 | GET    | `/observer/events`         | Recent audit events.                     |
 | GET    | `/observer/stream`         | Live audit stream (SSE).                 |
+| GET    | `/approvals`               | NEEDS_OPERATOR queue awaiting a human.   |
+| GET    | `/leads`                   | Manually submitted leads, newest first.  |
+| POST   | `/leads/fiverr`            | Paste in a Fiverr listing to score it.   |
 
 ## Configuration
 
@@ -137,17 +150,20 @@ poetry run python -m scripts.seed_db --check  # verify connectivity
 
 The Next.js command interface (`frontend/`) is a dark, precise, alive command
 center: Intake, live Pipeline view with breathing brain orbs, the Judgment
-Ledger, Doctrine, and the real-time Observer stream. See `frontend/README.md`.
+Ledger, Doctrine, the real-time Observer stream, and Leads & Approvals (the
+Fiverr paste-in form and the NEEDS_OPERATOR confirm/reject queue). See
+`frontend/README.md`.
 
 ## Project layout
 
 ```
-harness/     core engine (schemas, orchestrator, router, bus, registry, memory, observer, agent loop, brain_loader, API)
-brains/      _base contract (incl. spawn_agent) + example specialist brains
-memory/      context store, judgment ledger, doctrine store
-intake/      text / voice / API intake
-frontend/    Next.js command interface
-docker/      Dockerfiles, compose, Supabase schema
-scripts/     run_brain, seed_db, register_brain
-docs/        architecture, workflows, system_graph, file_reference, message_protocol, brain_sdk, dev_handoff
+harness/       core engine (schemas, orchestrator, router, bus, registry, memory, observer, agent loop, brain_loader, API)
+brains/        _base contract (incl. spawn_agent) + example specialist brains + blvckbot (freelance-agent brains)
+integrations/  external service clients (Upwork)
+memory/        context store, judgment ledger, doctrine store
+intake/        text / voice / API intake
+frontend/      Next.js command interface
+docker/        Dockerfiles, compose, Supabase schema
+scripts/       run_brain, seed_db, register_brain
+docs/          architecture, workflows, system_graph, file_reference, message_protocol, brain_sdk, dev_handoff
 ```

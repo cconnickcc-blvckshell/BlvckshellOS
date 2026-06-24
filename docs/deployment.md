@@ -68,6 +68,8 @@ When your machine is off, cloud brains on Render handle everything.
 | `BLVCKSHELL_USE_IN_MEMORY_BUS` | `true` for tests | `false` | `false` |
 | `BLVCKSHELL_RUN_WORKERS_IN_PROCESS` | `true` | `true` | `false` |
 | `BLVCKSHELL_USE_FAKE_LLM` | `false` | `false` | `false` |
+| `BLVCKSHELL_UPWORK_CLIENT_ID` / `_CLIENT_SECRET` | optional | optional (Research Brain) | not set |
+| `BLVCKSHELL_UPWORK_REDIRECT_URI` / `_REFRESH_TOKEN` | optional | optional (Research Brain) | not set |
 | `NEXT_PUBLIC_HARNESS_URL` | `http://localhost:8000` | N/A | N/A |
 
 ## Local development
