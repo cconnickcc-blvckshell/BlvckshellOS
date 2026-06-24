@@ -61,6 +61,7 @@ class Settings(BaseSettings):
         default=(
             "brains.blvckbot.brain:BlvckbotBrain,"
             "brains.blvckbot.research:ResearchBrain,"
+            "brains.blvckbot.proposal:ProposalBrain,"
             "brains.examples.venture:VentureBrain,"
             "brains.examples.commander:CommanderBrain,"
             "brains.examples.capital:CapitalBrain"
