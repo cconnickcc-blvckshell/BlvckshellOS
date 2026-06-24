@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     worker_brain_modules: str = Field(
         default=(
             "brains.blvckbot.brain:BlvckbotBrain,"
+            "brains.blvckbot.research:ResearchBrain,"
             "brains.examples.venture:VentureBrain,"
             "brains.examples.commander:CommanderBrain,"
             "brains.examples.capital:CapitalBrain"
