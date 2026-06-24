@@ -106,6 +106,7 @@ class Harness:
         self._background: set[asyncio.Task] = set()
         self._pipelines: dict[str, dict] = {}
         self._runs: dict[str, Run] = {}
+        self._leads: list[dict] = []
         self._started = False
 
     async def startup(self) -> None:
@@ -314,6 +315,42 @@ class Harness:
             if worker.brain_id == brain_id:
                 return worker
         return None
+
+    def _find_tool(self, brain_id: str, tool_name: str):
+        """Look up a registered brain's tool by name, by id only (no brain imports)."""
+        worker = self.get_worker(brain_id)
+        if worker is None:
+            return None
+        for tool in getattr(worker, "tools", []):
+            if tool.name == tool_name:
+                return tool
+        return None
+
+    async def submit_fiverr_lead(self, payload: dict) -> dict:
+        """Normalize and score a manually pasted Fiverr listing via the Research Brain.
+
+        Fiverr has no API; this is the human paste-in path — it never scrapes or
+        automates Fiverr in any way, it only reshapes and scores text a human gave it.
+        """
+        intake_tool = self._find_tool("research", "fiverr_manual_intake")
+        if intake_tool is None:
+            return {"error": "research brain is not registered"}
+        lead = await intake_tool.run(payload)
+        if "error" in lead:
+            return lead
+        factors = payload.get("factors")
+        if factors:
+            score_tool = self._find_tool("research", "score_lead")
+            if score_tool is not None:
+                scored = await score_tool.run({"factors": factors})
+                lead["score"] = scored.get("score")
+                lead["score_factors"] = scored.get("factors")
+        self._leads.append(lead)
+        return lead
+
+    def list_leads(self) -> list[dict]:
+        """Return manually submitted leads, newest first."""
+        return list(reversed(self._leads))
 
     async def run_chat(
         self,

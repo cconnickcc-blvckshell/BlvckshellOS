@@ -18,12 +18,27 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from intake.api import create_intake_router
+from pydantic import BaseModel, Field
 from harness.api.errors import CorrelationIdMiddleware, register_error_handlers
 from harness.config import get_settings
 from harness.core.errors import HarnessError
 from harness.core.harness import Harness
 from harness.schemas.chat import ChatRequest
 from harness.schemas.judgment import OutcomeRecord
+
+_NEEDS_OPERATOR_TAG = "judgment_outcome:REQUEST_MORE_EVIDENCE"
+
+
+class FiverrLeadRequest(BaseModel):
+    """A manually pasted Fiverr listing — never scraped, always human-submitted."""
+
+    title: str = ""
+    description: str = ""
+    budget: float | None = None
+    currency: str = "USD"
+    skills: list[str] = Field(default_factory=list)
+    engagement_type: str | None = None
+    factors: dict[str, float] | None = None
 
 _harness: Harness | None = None
 
@@ -155,6 +170,35 @@ def create_app() -> FastAPI:
         """Return recent Judgment Ledger entries, optionally filtered by brain."""
         entries = await get_harness().memory.ledger.list_recent(brain_id=brain_id, limit=limit)
         return [e.model_dump(mode="json") for e in entries]
+
+    @app.get("/approvals", tags=["memory"])
+    async def list_approvals(
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> list[dict[str, Any]]:
+        """Return ledger entries awaiting operator confirmation (NEEDS_OPERATOR queue)."""
+        entries = await get_harness().memory.ledger.list_recent(limit=max(limit, 200))
+        pending = [
+            e
+            for e in entries
+            if e.outcome is None and _NEEDS_OPERATOR_TAG in e.assumptions
+        ]
+        return [e.model_dump(mode="json") for e in pending[:limit]]
+
+    @app.post("/leads/fiverr", tags=["leads"])
+    async def submit_fiverr_lead(lead: FiverrLeadRequest) -> dict[str, Any]:
+        """Accept a manually pasted Fiverr listing, normalize it, and score it.
+
+        Fiverr has no sanctioned API — this is the human paste-in path only.
+        """
+        result = await get_harness().submit_fiverr_lead(lead.model_dump())
+        if "error" in result:
+            raise HTTPException(status_code=422, detail=result["error"])
+        return result
+
+    @app.get("/leads", tags=["leads"])
+    async def list_leads() -> list[dict[str, Any]]:
+        """Return manually submitted leads, newest first."""
+        return get_harness().list_leads()
 
     @app.get("/doctrine", tags=["memory"])
     async def list_doctrine(
