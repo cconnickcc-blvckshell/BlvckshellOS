@@ -11,6 +11,7 @@ packages = [
     { include = "memory" },
     { include = "intake" },
     { include = "judgment" },
+    { include = "integrations" },
 ]
 
 [tool.poetry.dependencies]
