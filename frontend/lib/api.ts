@@ -140,6 +140,41 @@ export interface OutcomeRecord {
   lessons?: string[];
 }
 
+export interface Approval {
+  id: string;
+  brain_id: string;
+  context_id: string;
+  timestamp: string;
+  belief: string;
+  confidence: number;
+  evidence: string[];
+  assumptions: string[];
+  outcome: string | null;
+}
+
+export interface Lead {
+  id: string;
+  title: string;
+  description: string;
+  skills: string[];
+  budget_amount?: number | null;
+  budget_currency?: string;
+  engagement_type?: string | null;
+  source: string;
+  score?: number;
+  score_factors?: Record<string, number>;
+}
+
+export interface FiverrLeadPayload {
+  title: string;
+  description: string;
+  budget?: number;
+  currency?: string;
+  skills?: string[];
+  engagement_type?: string;
+  factors?: Record<string, number>;
+}
+
 export interface ApiErrorBody {
   code?: string;
   message?: string;
@@ -314,6 +349,18 @@ export const api = {
     get<Opinion[]>(`/memory/opinions${includeRetired ? "?include_retired=true" : ""}`),
   searchMemory: (q: string) =>
     get<MemorySearchResult>(`/memory/search?q=${encodeURIComponent(q)}`),
+  approvals: () => get<Approval[]>("/approvals"),
+  leads: () => get<Lead[]>("/leads"),
+  submitFiverrLead: async (payload: FiverrLeadPayload) => {
+    const path = "/leads/fiverr";
+    const res = await fetch(`${HARNESS_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw await parseApiError(res, path);
+    return res.json() as Promise<Lead>;
+  },
   sendChatMessage,
   getChatHistory,
   getChatSessions,
