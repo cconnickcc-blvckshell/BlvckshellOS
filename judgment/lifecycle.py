@@ -15,6 +15,7 @@ from harness.schemas.task import Task
 
 from judgment.evidence import assess_evidence
 from judgment.guards.harm_aware import apply_harm_guard
+from judgment.guards.human_gate import apply_human_gate
 from judgment.guards.safe_divergence import apply_safe_divergence
 from judgment.outcome import JudgmentOutcome
 from judgment.profile import JudgmentProfile
@@ -301,6 +302,17 @@ class JudgmentLifecycle:
                 context_id=context_id,
                 reason=block_reason,
                 proposed=after_divergence.value,
+            )
+
+        final_outcome, gate_reason = apply_human_gate(profile, proposed=final_outcome)
+        if gate_reason:
+            guard_blocks.append(gate_reason)
+            await self._emit_guard_block(
+                observer,
+                brain_id=brain_id,
+                context_id=context_id,
+                reason=gate_reason,
+                proposed=final_outcome.value,
             )
 
         result.outcome = final_outcome

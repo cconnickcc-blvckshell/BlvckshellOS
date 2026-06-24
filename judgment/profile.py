@@ -21,6 +21,7 @@ class JudgmentProfile(BaseModel):
 
     domain: str = "general"
     harm_guard_enabled: bool = False
+    human_gate_enabled: bool = False
     safe_divergence_enabled: bool = True
     foundation_enabled: bool = True
     exploration_enabled: bool = True

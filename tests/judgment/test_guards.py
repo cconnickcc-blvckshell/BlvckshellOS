@@ -2,6 +2,7 @@
 
 from harness.schemas.judgment import JudgmentEntry
 from judgment.guards.harm_aware import apply_harm_guard
+from judgment.guards.human_gate import apply_human_gate
 from judgment.guards.safe_divergence import apply_safe_divergence
 from judgment.guards.tension import DivergenceTension
 from judgment.outcome import JudgmentOutcome
@@ -160,3 +161,44 @@ def test_safe_divergence_contested_to_request_more_evidence() -> None:
     )
     assert outcome == JudgmentOutcome.REQUEST_MORE_EVIDENCE
     assert tension == DivergenceTension.CONTESTED
+
+
+def test_human_gate_forces_proceed_to_request_more_evidence() -> None:
+    profile = JudgmentProfile(domain="proposal", human_gate_enabled=True)
+
+    outcome, reason = apply_human_gate(profile, proposed=JudgmentOutcome.PROCEED)
+
+    assert outcome == JudgmentOutcome.REQUEST_MORE_EVIDENCE
+    assert reason == "human_gate:action_requires_operator"
+
+
+def test_human_gate_forces_staged_proceed_to_request_more_evidence() -> None:
+    profile = JudgmentProfile(domain="build", human_gate_enabled=True)
+
+    outcome, reason = apply_human_gate(profile, proposed=JudgmentOutcome.STAGED_PROCEED)
+
+    assert outcome == JudgmentOutcome.REQUEST_MORE_EVIDENCE
+    assert reason == "human_gate:action_requires_operator"
+
+
+def test_human_gate_passes_through_hold_and_request_more_evidence() -> None:
+    profile = JudgmentProfile(domain="build", human_gate_enabled=True)
+
+    outcome, reason = apply_human_gate(profile, proposed=JudgmentOutcome.HOLD)
+    assert outcome == JudgmentOutcome.HOLD
+    assert reason is None
+
+    outcome, reason = apply_human_gate(
+        profile, proposed=JudgmentOutcome.REQUEST_MORE_EVIDENCE
+    )
+    assert outcome == JudgmentOutcome.REQUEST_MORE_EVIDENCE
+    assert reason is None
+
+
+def test_human_gate_inactive_when_disabled() -> None:
+    profile = JudgmentProfile(domain="build", human_gate_enabled=False)
+
+    outcome, reason = apply_human_gate(profile, proposed=JudgmentOutcome.PROCEED)
+
+    assert outcome == JudgmentOutcome.PROCEED
+    assert reason is None

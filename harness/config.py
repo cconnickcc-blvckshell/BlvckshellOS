@@ -37,6 +37,11 @@ class Settings(BaseSettings):
         heartbeat_interval_seconds: How often brains report a heartbeat.
         heartbeat_timeout_seconds: After this with no heartbeat a brain is stale.
         frontend_url: Public frontend URL for CORS (production Vercel deployment).
+        upwork_client_id: Upwork OAuth2 app client id.
+        upwork_client_secret: Upwork OAuth2 app client secret.
+        upwork_redirect_uri: Upwork OAuth2 app redirect URI.
+        upwork_refresh_token: Long-lived Upwork OAuth2 refresh token, obtained
+            once via the authorization-code flow outside the harness.
     """
 
     model_config = SettingsConfigDict(
@@ -84,6 +89,11 @@ class Settings(BaseSettings):
 
     frontend_url: str | None = None
 
+    upwork_client_id: str | None = None
+    upwork_client_secret: str | None = None
+    upwork_redirect_uri: str | None = None
+    upwork_refresh_token: str | None = None
+
     @property
     def supabase_enabled(self) -> bool:
         """Whether Supabase credentials are configured."""
@@ -108,6 +118,18 @@ class Settings(BaseSettings):
     def ollama_enabled(self) -> bool:
         """Whether a local Ollama server URL is configured."""
         return bool(self.ollama_effective_url) and not self.use_fake_llm
+
+    @property
+    def upwork_enabled(self) -> bool:
+        """Whether Upwork OAuth credentials are configured.
+
+        The refresh token is the long-lived credential; client id/secret
+        alone are not enough to call the API without completing the OAuth
+        authorization-code flow once out of band.
+        """
+        return bool(
+            self.upwork_client_id and self.upwork_client_secret and self.upwork_refresh_token
+        )
 
 
 @lru_cache(maxsize=1)
