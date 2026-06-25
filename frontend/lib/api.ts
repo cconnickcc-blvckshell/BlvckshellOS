@@ -2,8 +2,9 @@
 
 import { createReconnectingObserverStream } from "./observerStream";
 
-export const HARNESS_URL =
-  process.env.NEXT_PUBLIC_HARNESS_URL || "http://localhost:8000";
+export const HARNESS_URL = (
+  process.env.NEXT_PUBLIC_HARNESS_URL || "http://localhost:8000"
+).replace(/\/+$/, "");
 
 export type BrainState =
   | "IDLE"

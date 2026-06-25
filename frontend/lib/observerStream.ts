@@ -1,9 +1,10 @@
 import type { AuditEvent } from "./api";
 
-const HARNESS_URL =
+const HARNESS_URL = (
   typeof process !== "undefined"
     ? process.env.NEXT_PUBLIC_HARNESS_URL || "http://localhost:8000"
-    : "http://localhost:8000";
+    : "http://localhost:8000"
+).replace(/\/+$/, "");
 
 const RECONNECT_MS = 3000;
 
