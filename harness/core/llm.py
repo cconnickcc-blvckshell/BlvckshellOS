@@ -14,6 +14,7 @@ All return a uniform :class:`LLMResponse` carrying text, tool calls, and metrics
 from __future__ import annotations
 
 import abc
+import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,6 +23,12 @@ from typing import Any
 from harness.logging_config import get_logger
 
 logger = get_logger("llm")
+
+# Brains run as independent concurrent tasks (one asyncio task per brain),
+# so several can call the same Anthropic model at once. Capping concurrency
+# here smooths bursts that would otherwise blow through the org's
+# tokens-per-minute limit; the SDK's own retry (below) covers the rest.
+_ANTHROPIC_CONCURRENCY = asyncio.Semaphore(2)
 
 
 class LLMError(Exception):
@@ -127,7 +134,10 @@ class AnthropicClient(LLMClient):
         if self._client is None:
             from anthropic import AsyncAnthropic
 
-            self._client = AsyncAnthropic(api_key=self._api_key)
+            # max_retries gives the SDK room to back off and retry on 429s
+            # (it honors the API's Retry-After header) instead of failing
+            # the brain's task on the first rate-limit response.
+            self._client = AsyncAnthropic(api_key=self._api_key, max_retries=5)
         return self._client
 
     async def complete(
@@ -155,7 +165,8 @@ class AnthropicClient(LLMClient):
             kwargs["tools"] = tools
         if temperature is not None:
             kwargs["temperature"] = temperature
-        resp = await self._require().messages.create(**kwargs)
+        async with _ANTHROPIC_CONCURRENCY:
+            resp = await self._require().messages.create(**kwargs)
         latency_ms = (time.perf_counter() - started) * 1000
 
         text_parts: list[str] = []
