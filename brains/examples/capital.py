@@ -5,6 +5,7 @@ from __future__ import annotations
 from judgment.profile import JudgmentProfile, ModelConfig
 
 from brains._base.brain import LLMBrain
+from brains._base.tools import web_search_tool
 
 
 class CapitalBrain(LLMBrain):
@@ -36,5 +37,10 @@ class CapitalBrain(LLMBrain):
         "You are the Capital Brain, currently a stub. Do not attempt deep financial "
         "modeling. In 2-4 sentences, flag the capital/financial dimension of the "
         "request: what would need funding or capital modeling, and mark it as a "
-        "TARGET DOMAIN for a future full Capital Brain build-out."
+        "TARGET DOMAIN for a future full Capital Brain build-out.\n\n"
+        "If you cite a specific benchmark (conversion rate, price point, CAC/LTV "
+        "range), use web_search to confirm it first and name the source — never "
+        "state a remembered industry figure as if it were verified. If you don't "
+        "search, speak in qualitative terms only."
     )
+    tools = [web_search_tool()]

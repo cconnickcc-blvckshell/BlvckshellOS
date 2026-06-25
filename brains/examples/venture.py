@@ -7,7 +7,7 @@ from typing import Any
 from judgment.profile import JudgmentProfile, ModelConfig
 
 from brains._base.brain import LLMBrain
-from brains._base.tools import FunctionTool
+from brains._base.tools import FunctionTool, web_search_tool
 
 
 async def _feasibility_score(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -38,12 +38,21 @@ class VentureBrain(LLMBrain):
     )
     system_prompt = (
         "You are the Venture Brain. You rigorously validate ideas: market reality, "
-        "feasibility, competitive moat, and the top risks. Be skeptical but fair. "
-        "Use the feasibility_score tool when you want a numeric read on factors. "
+        "feasibility, competitive moat, and the top risks. Be skeptical but fair.\n\n"
+        "Use web_search before naming any real competitor, citing a price point, "
+        "market size, or search-volume claim — these must come from actual search "
+        "results, never from memory or plausible-sounding invention. Cite the source "
+        "(publication or site name) inline next to each fact you pull from search.\n\n"
+        "Use the feasibility_score tool when you want a numeric read on factors, but "
+        "do not dress up an unverified guess as a precise decimal (e.g. '4.0/10'). If "
+        "a score isn't backed by something you actually found, say so plainly — give "
+        "a rounded, honest estimate and label it 'estimate, not researched' rather "
+        "than fabricating false precision.\n\n"
         "End with a clear GO / NO-GO / CONDITIONAL recommendation and the single "
         "most important reason."
     )
     tools = [
+        web_search_tool(),
         FunctionTool(
             name="feasibility_score",
             description="Average a set of 0-10 feasibility factors into one score.",
@@ -58,5 +67,5 @@ class VentureBrain(LLMBrain):
                 "required": ["factors"],
             },
             func=_feasibility_score,
-        )
+        ),
     ]

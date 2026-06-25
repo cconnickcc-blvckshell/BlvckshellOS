@@ -42,6 +42,40 @@ class BaseTool(abc.ABC):
         }
 
 
+class ServerTool(BaseTool):
+    """A tool executed entirely by the model provider, never locally.
+
+    Anthropic's native web search is the motivating case: the search and the
+    model's continued reasoning happen inside one provider API call, so there
+    is no local function to run and no ``tool_result`` round-trip — the
+    agent loop just sees a normal text response once the model is done
+    searching. :meth:`run` should never actually be invoked; it exists only
+    to satisfy :class:`BaseTool`.
+    """
+
+    def __init__(self, *, schema: dict[str, Any]) -> None:
+        self.name = schema.get("name", "server_tool")
+        self.description = ""
+        self._schema = schema
+
+    async def run(self, arguments: dict[str, Any]) -> Any:
+        raise RuntimeError(f"'{self.name}' is provider-executed and cannot run locally")
+
+    def to_schema(self) -> dict[str, Any]:
+        return self._schema
+
+
+def web_search_tool(max_uses: int = 5) -> ServerTool:
+    """Anthropic's native web search — real results, server-executed.
+
+    Requires no separate search API key; Claude performs the search itself
+    and grounds its answer in the results within the same call.
+    """
+    return ServerTool(
+        schema={"type": "web_search_20250305", "name": "web_search", "max_uses": max_uses}
+    )
+
+
 class FunctionTool(BaseTool):
     """Adapter that turns an async function into a :class:`BaseTool`."""
 

@@ -18,10 +18,16 @@ async def test_feasibility_score_handles_empty() -> None:
 
 
 def test_venture_brain_exposes_tool_schema() -> None:
-    assert VentureBrain.tools[0].name == "feasibility_score"
-    schema = VentureBrain.tools[0].to_schema()
+    tool = next(t for t in VentureBrain.tools if t.name == "feasibility_score")
+    schema = tool.to_schema()
     assert schema["name"] == "feasibility_score"
     assert "factors" in schema["input_schema"]["properties"]
+
+
+def test_venture_brain_exposes_web_search() -> None:
+    tool = next(t for t in VentureBrain.tools if t.name == "web_search")
+    schema = tool.to_schema()
+    assert schema["type"] == "web_search_20250305"
 
 
 async def test_passthrough_transcriber_to_idea() -> None:
