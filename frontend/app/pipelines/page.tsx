@@ -11,6 +11,7 @@ function statusColor(status: string): string {
   if (status === "COMPLETED") return "text-success";
   if (status === "running") return "text-active";
   if (status === "PARTIAL" || status === "NEEDS_OPERATOR") return "text-warning";
+  if (status === "FAILED" || status === "failed") return "text-error";
   return "text-text-secondary";
 }
 
@@ -123,6 +124,15 @@ function PipelinesInner() {
               </div>
               <p className="mb-6 font-body text-text-primary">{selected.idea}</p>
 
+              {selected.error && (
+                <div className="mb-6 rounded-lg border border-error/40 bg-error/10 p-3">
+                  <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-error">
+                    Error
+                  </div>
+                  <p className="font-body text-sm text-error">{selected.error}</p>
+                </div>
+              )}
+
               {selected.history && selected.history.length > 0 && (
                 <div className="mb-6">
                   <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-text-secondary">
@@ -132,7 +142,12 @@ function PipelinesInner() {
                     {selected.history.map((h, i) => (
                       <div key={i} className="rounded-lg border border-border bg-bg/40 p-3">
                         <span className="font-mono text-xs text-active">{h.brain}</span>
-                        <p className="mt-1 font-body text-sm text-text-primary">{h.summary}</p>
+                        <p className="mt-1 font-body text-sm text-text-primary">
+                          {h.summary || "(no summary)"}
+                        </p>
+                        {h.error && (
+                          <p className="mt-1 font-mono text-xs text-error">{h.error}</p>
+                        )}
                       </div>
                     ))}
                   </div>

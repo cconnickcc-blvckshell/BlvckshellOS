@@ -185,6 +185,7 @@ class Harness:
             if exc is None:
                 return
             self._pipelines[objective_id]["status"] = "failed"
+            self._pipelines[objective_id]["error"] = format_exception(exc)
             asyncio.create_task(self._handle_pipeline_failure(objective_id, exc))
 
         task.add_done_callback(_on_done)
@@ -262,15 +263,26 @@ class Harness:
                 "history": [],
                 "output": "",
                 "status": stub["status"],
+                "error": stub.get("error"),
             }
+        failures = [r for r in run.results if not r.succeeded]
+        error = (
+            "; ".join(f"{r.brain_id}: {r.error or r.summary}" for r in failures)
+            if failures
+            else None
+        )
         return {
             "pipeline_id": objective_id,
             "run_id": run.run_id,
             "idea": stub["idea"],
             "plan": [t.model_dump(mode="json") for t in run.tasks],
-            "history": [{"brain": r.brain_id, "summary": r.summary} for r in run.results],
+            "history": [
+                {"brain": r.brain_id, "summary": r.summary, "error": r.error}
+                for r in run.results
+            ],
             "output": run.output,
             "status": run.status.value,
+            "error": error,
         }
 
     async def run_pipeline(

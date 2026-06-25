@@ -35,8 +35,9 @@ export interface Pipeline {
   idea: string;
   status: string;
   output?: string;
+  error?: string | null;
   plan?: Array<Record<string, unknown>>;
-  history?: Array<{ brain: string; summary: string }>;
+  history?: Array<{ brain: string; summary: string; error?: string | null }>;
 }
 
 export interface Judgment {

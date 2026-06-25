@@ -134,7 +134,12 @@ async def test_spawn_pipeline_marks_failed_on_exception(
     await asyncio.sleep(0.1)
     try:
         assert harness._pipelines[objective_id]["status"] == "failed"
+        assert "pipeline exploded" in harness._pipelines[objective_id]["error"]
         events = await harness.observer.list_recent(context_id=objective_id, limit=10)
         assert any(e.event_type == AuditEventType.ERROR for e in events)
+
+        state = await harness.get_pipeline(objective_id)
+        assert state is not None
+        assert "pipeline exploded" in state["error"]
     finally:
         await harness.shutdown()
