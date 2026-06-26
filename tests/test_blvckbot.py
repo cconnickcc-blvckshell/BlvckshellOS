@@ -75,6 +75,35 @@ async def test_run_chat_persists_conversation(harness_with_blvckbot: Harness) ->
     assert roles.count("blvckbot") == 2
 
 
+@pytest.fixture
+async def harness_with_research():
+    """Harness with Blvckbot and the Research brain loaded."""
+    settings = Settings(
+        environment="test",
+        use_in_memory_bus=True,
+        use_fake_llm=True,
+        log_level="WARNING",
+        worker_brain_modules=(
+            "brains.blvckbot.brain:BlvckbotBrain,brains.blvckbot.research:ResearchBrain"
+        ),
+    )
+    instance = Harness(settings)
+    await instance.startup()
+    try:
+        yield instance
+    finally:
+        await instance.shutdown()
+
+
+async def test_run_chat_delegates_evidence_research(harness_with_research: Harness) -> None:
+    result = await harness_with_research.run_chat(
+        "Can you research and verify what Teal currently charges for its paid tier?"
+    )
+    actions = result["actions_taken"]
+    assert any(a["capability"] == "evidence_research" for a in actions)
+    assert all(a["capability"] != "job_lead_research" for a in actions)
+
+
 async def test_chat_emits_judgment_stage_events(harness_with_blvckbot: Harness) -> None:
     result = await harness_with_blvckbot.run_chat("Give me a quick plan for launch")
     events = await harness_with_blvckbot.observer.list_recent(

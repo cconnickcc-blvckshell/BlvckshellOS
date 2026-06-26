@@ -48,7 +48,7 @@ def test_research_brain_exposes_tool_schemas(harness: Harness) -> None:
     brain = harness.get_worker("research")
     assert isinstance(brain, ResearchBrain)
     names = {tool.name for tool in brain.tools}
-    assert names == {"upwork_search_jobs", "fiverr_manual_intake", "score_lead"}
+    assert names == {"web_search", "upwork_search_jobs", "fiverr_manual_intake", "score_lead"}
 
 
 async def test_upwork_search_jobs_tool_surfaces_auth_error_when_unconfigured(

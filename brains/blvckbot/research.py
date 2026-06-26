@@ -1,4 +1,13 @@
-"""Research Brain — sources and scores freelance leads (Upwork + manual Fiverr)."""
+"""Research Brain — freelance lead sourcing, plus CKOS-style evidence research.
+
+CKOS (the ecosystem's dedicated knowledge/research brain) is a separate,
+not-yet-built repository — department brains are meant to send it
+``knowledge_requests`` and get back evidence packages (source, confidence,
+assumptions, expiry) rather than ever pulling from a knowledge store
+directly. Until that repo exists, this brain fills the same role in-process:
+any brain (via Blvckbot delegation) can hand it a question and get back a
+real, sourced answer instead of fabricated certainty.
+"""
 
 from __future__ import annotations
 
@@ -7,22 +16,30 @@ from typing import Any
 from judgment.profile import JudgmentProfile, ModelConfig
 
 from brains._base.brain import BrainRuntime, LLMBrain
-from brains._base.tools import FunctionTool
+from brains._base.tools import FunctionTool, web_search_tool
 from integrations.upwork_client import UpworkAPIError, UpworkAuthError, UpworkClient
 
 RESEARCH_SYSTEM_PROMPT = (
-    "You are the Research Brain for blvckbot, an autonomous freelance agent. "
-    "Your job is to find and score freelance leads, not to act on them.\n\n"
-    "Use upwork_search_jobs to pull live Upwork postings for relevant skills. "
-    "Fiverr has no API access — leads from Fiverr only arrive via "
-    "fiverr_manual_intake, where a human has pasted in a listing; never invent "
-    "or assume Fiverr listings exist.\n\n"
-    "For each candidate lead, use score_lead to rate fit (skills match), "
-    "profitability (budget vs. effort), and client quality (history, clarity "
-    "of the brief) on a 0-10 scale each.\n\n"
-    "End with PROCEED if you found one or more leads worth pursuing (list "
-    "them with their scores), HOLD if nothing qualifies, or "
-    "REQUEST_MORE_EVIDENCE if the objective is too vague to search against."
+    "You are the Research Brain for blvckbot. You have two jobs.\n\n"
+    "1) Freelance lead sourcing: use upwork_search_jobs to pull live Upwork "
+    "postings for relevant skills. Fiverr has no API access — leads from "
+    "Fiverr only arrive via fiverr_manual_intake, where a human has pasted in "
+    "a listing; never invent or assume Fiverr listings exist. For each "
+    "candidate lead, use score_lead to rate fit (skills match), profitability "
+    "(budget vs. effort), and client quality (history, clarity of the brief) "
+    "on a 0-10 scale each.\n\n"
+    "2) Evidence research (the CKOS role, until a dedicated CKOS brain "
+    "exists): when another brain or the operator hands you a factual "
+    "question, use web_search to find real, current sources — never answer "
+    "from memory. Return an evidence package for each claim: the fact, its "
+    "source (publication/site name), a confidence level (low/medium/high "
+    "based on source quality and agreement across sources), and any "
+    "assumption or freshness caveat (e.g. 'pricing as of the search date, "
+    "may have changed'). If you can't find a real source for something, say "
+    "so plainly — never fill the gap with a plausible-sounding guess.\n\n"
+    "End with PROCEED if you found what was asked for (leads or evidence), "
+    "HOLD if nothing qualifies, or REQUEST_MORE_EVIDENCE if the objective is "
+    "too vague to search against or no source could be found."
 )
 
 
@@ -61,15 +78,16 @@ async def _fiverr_manual_intake(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 class ResearchBrain(LLMBrain):
-    """Finds and scores freelance job leads from Upwork (API) and Fiverr (manual paste-in)."""
+    """Sources freelance leads, and answers factual questions with sourced evidence."""
 
     brain_id = "research"
     name = "Research Brain"
     description = (
         "Sources freelance job leads from Upwork (live API) and manually pasted "
-        "Fiverr listings, and scores them for fit, profitability, and client quality."
+        "Fiverr listings, scores them for fit/profitability/client quality, and "
+        "answers factual questions with real, sourced evidence (the CKOS role)."
     )
-    capabilities = ["job_lead_research", "lead_scoring"]
+    capabilities = ["job_lead_research", "lead_scoring", "evidence_research"]
     pipeline_participant = False
     judgment_profile = JudgmentProfile(
         domain="research",
@@ -86,6 +104,7 @@ class ResearchBrain(LLMBrain):
     def __init__(self, runtime: BrainRuntime) -> None:
         super().__init__(runtime)
         self.tools = [
+            web_search_tool(),
             FunctionTool(
                 name="upwork_search_jobs",
                 description=(

@@ -303,30 +303,31 @@ class BlvckbotBrain(BaseBrain):
         seen_capabilities: set[str] = set()
 
         keyword_map = [
-            (("build", "idea", "market", "validate", "startup", "venture"), "idea"),
-            (("capital", "fund", "finance", "budget", "invest", "money"), "capital"),
-            (("plan", "execute", "milestone", "launch", "roadmap"), "execution"),
+            (("build", "idea", "market", "validate", "startup", "venture"), "venture", None),
+            (("capital", "fund", "finance", "budget", "invest", "money"), "capital", None),
+            (("plan", "execute", "milestone", "launch", "roadmap"), "commander", None),
+            (
+                ("research", "look up", "verify", "fact check", "source", "evidence",
+                 "is it true", "how much does", "what does it cost", "competitor"),
+                "research",
+                "evidence_research",
+            ),
         ]
 
         for brain in registry_brains:
             if brain.brain_id in (self.brain_id, "blvckbot"):
                 continue
-            for keywords, theme in keyword_map:
-                if not any(word in lower for word in keywords):
+            for keywords, brain_id, capability in keyword_map:
+                if brain.brain_id != brain_id or not any(word in lower for word in keywords):
                     continue
-                if theme == "idea" and brain.brain_id not in ("venture",):
+                chosen = capability if capability in brain.capabilities else (
+                    brain.capabilities[0] if brain.capabilities else None
+                )
+                if chosen is None or chosen in seen_capabilities:
                     continue
-                if theme == "capital" and brain.brain_id not in ("capital",):
-                    continue
-                if theme == "execution" and brain.brain_id not in ("commander",):
-                    continue
-                for capability in brain.capabilities:
-                    if capability in seen_capabilities:
-                        continue
-                    seen_capabilities.add(capability)
-                    objective = f"Support Blvckbot on: {message[:300]}"
-                    selected.append((capability, objective))
-                    break
+                seen_capabilities.add(chosen)
+                objective = f"Support Blvckbot on: {message[:300]}"
+                selected.append((chosen, objective))
 
         if not selected and outcome == JudgmentOutcome.PROCEED:
             for brain in registry_brains:
