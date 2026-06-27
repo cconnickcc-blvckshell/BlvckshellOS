@@ -597,9 +597,12 @@ def build_llm_client(settings: Any) -> LLMClient:
         logger.warning("llm_fallback_to_fake", reason="no_providers_configured")
         return FakeLLMClient()
 
-    if len(clients) == 1:
-        return next(iter(clients.values()))
-
+    # Always route through MultiProvider, even with a single provider. Brains
+    # declare fallback_models in their ModelConfig; a bare single client ignores
+    # that field entirely, so the declared fallback chain would silently never
+    # fire (e.g. the day a second provider key is added). Routing through the
+    # multiplexer honors the chain — unconfigured fallbacks are skipped, so a
+    # single-provider setup behaves identically until another key exists.
     default_provider = next(k for k in ("anthropic", "openai", "ollama") if k in clients)
     return MultiProviderLLMClient(
         clients=clients,

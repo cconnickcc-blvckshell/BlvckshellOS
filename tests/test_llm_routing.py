@@ -55,6 +55,8 @@ def test_build_llm_client_fake_when_forced() -> None:
 
 
 def test_build_llm_client_ollama_only() -> None:
+    # Even a single provider is wrapped in the multiplexer so declared
+    # fallback_models are honored; the lone ollama client is what it routes to.
     client = build_llm_client(
         Settings(
             use_fake_llm=False,
@@ -63,7 +65,18 @@ def test_build_llm_client_ollama_only() -> None:
             ollama_base_url="http://localhost:11434",
         )
     )
-    assert isinstance(client, OllamaClient)
+    assert isinstance(client, MultiProviderLLMClient)
+    assert isinstance(client._clients["ollama"], OllamaClient)
+
+
+def test_build_llm_client_single_anthropic_honors_fallback_chain() -> None:
+    # With only the Anthropic key, the client must still route through the
+    # multiplexer (not a bare AnthropicClient) so fallback_models are honored
+    # the moment a second provider key is added — no code change required.
+    client = build_llm_client(
+        Settings(use_fake_llm=False, anthropic_api_key="sk-ant", openai_api_key=None)
+    )
+    assert isinstance(client, MultiProviderLLMClient)
 
 
 def test_build_llm_client_multi_when_multiple_keys() -> None:
