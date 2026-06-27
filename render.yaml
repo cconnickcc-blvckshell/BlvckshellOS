@@ -24,6 +24,8 @@ services:
         sync: false
       - key: BLVCKSHELL_ANTHROPIC_MODEL
         value: claude-sonnet-4-6
+      - key: BLVCKSHELL_ANTHROPIC_TOKENS_PER_MINUTE
+        value: 28000
       - key: BLVCKSHELL_FRONTEND_URL
         sync: false
       - key: BLVCKSHELL_USE_IN_MEMORY_BUS

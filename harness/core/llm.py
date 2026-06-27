@@ -24,11 +24,93 @@ from harness.logging_config import get_logger
 
 logger = get_logger("llm")
 
-# Brains run as independent concurrent tasks (one asyncio task per brain),
-# so several can call the same Anthropic model at once. Capping concurrency
-# here smooths bursts that would otherwise blow through the org's
-# tokens-per-minute limit; the SDK's own retry (below) covers the rest.
+
+def estimate_input_tokens(system: str, messages: list[dict[str, Any]]) -> int:
+    """Rough input-token estimate for a request (≈4 chars/token).
+
+    Deliberately conservative and cheap: it exists only to charge a token
+    budget *before* a call returns real usage, so the rate limiter can hold
+    back a request that would breach the cap. Exact accuracy is unnecessary —
+    the post-call reconcile corrects the estimate against real usage.
+    """
+    chars = len(system)
+    for msg in messages:
+        content = msg.get("content", "")
+        chars += len(content) if isinstance(content, str) else len(str(content))
+    return chars // 4 + 8  # +8 for envelope/role overhead
+
+
+class _TokenRateLimiter:
+    """Bounds Anthropic input tokens per minute across all concurrent calls.
+
+    The org limit is on *input tokens per minute*, not requests, so a request
+    semaphore cannot enforce it — two concurrent web-search calls can each pull
+    20k+ input tokens and burst past a 30k/min cap. This is a continuously
+    refilling token bucket: a call waits until enough budget exists, so
+    sustained throughput stays under the cap while short idle periods bank
+    headroom for the next burst. A capacity of ``0`` disables it entirely.
+    """
+
+    def __init__(self, tokens_per_minute: int) -> None:
+        self._capacity = float(max(tokens_per_minute, 0))
+        self._tokens = self._capacity
+        self._refill_per_sec = self._capacity / 60.0
+        self._updated = time.monotonic()
+        self._lock = asyncio.Lock()
+
+    @property
+    def enabled(self) -> bool:
+        return self._capacity > 0
+
+    def _refill(self) -> None:
+        now = time.monotonic()
+        self._tokens = min(
+            self._capacity, self._tokens + (now - self._updated) * self._refill_per_sec
+        )
+        self._updated = now
+
+    async def acquire(self, estimated: int) -> None:
+        """Block until ``estimated`` tokens of budget are available, then spend them."""
+        if not self.enabled:
+            return
+        want = float(min(max(estimated, 0), self._capacity))
+        while True:
+            async with self._lock:
+                self._refill()
+                if self._tokens >= want:
+                    self._tokens -= want
+                    return
+                wait = (want - self._tokens) / self._refill_per_sec
+            await asyncio.sleep(min(wait, 5.0))
+
+    async def reconcile(self, estimated: int, actual: int) -> None:
+        """Correct the up-front estimate against the call's real input usage.
+
+        If the call used more than we charged, the extra is drained now (the
+        bucket can go negative, forcing the next call to wait — exactly the
+        backpressure we want). Capped at ``-capacity`` so one huge call can't
+        strand the bucket for more than a minute.
+        """
+        if not self.enabled:
+            return
+        charged = float(min(max(estimated, 0), self._capacity))
+        async with self._lock:
+            self._refill()
+            self._tokens = max(self._tokens - (float(actual) - charged), -self._capacity)
+
+
+# Brains run as independent concurrent tasks (one asyncio task per brain), so
+# several can hit the same Anthropic model at once. The semaphore smooths raw
+# request concurrency; the token bucket (the real guard) bounds tokens/minute.
+# The bucket's capacity is configured from settings in build_llm_client.
 _ANTHROPIC_CONCURRENCY = asyncio.Semaphore(2)
+_ANTHROPIC_RATE_LIMITER = _TokenRateLimiter(0)
+
+
+def configure_anthropic_rate_limit(tokens_per_minute: int) -> None:
+    """Set the process-wide Anthropic token-per-minute budget (0 disables)."""
+    global _ANTHROPIC_RATE_LIMITER
+    _ANTHROPIC_RATE_LIMITER = _TokenRateLimiter(tokens_per_minute)
 
 
 class LLMError(Exception):
@@ -165,8 +247,18 @@ class AnthropicClient(LLMClient):
             kwargs["tools"] = tools
         if temperature is not None:
             kwargs["temperature"] = temperature
-        async with _ANTHROPIC_CONCURRENCY:
-            resp = await self._require().messages.create(**kwargs)
+        estimated = estimate_input_tokens(system, messages)
+        await _ANTHROPIC_RATE_LIMITER.acquire(estimated)
+        resp = None
+        try:
+            async with _ANTHROPIC_CONCURRENCY:
+                resp = await self._require().messages.create(**kwargs)
+        finally:
+            # Reconcile against real usage; on failure (e.g. a 429) we keep the
+            # estimate charged so the next call is held back — correct
+            # backpressure, since a rejected call still spent rate-limit budget.
+            actual = resp.usage.input_tokens if resp is not None else estimated
+            await _ANTHROPIC_RATE_LIMITER.reconcile(estimated, actual)
         latency_ms = (time.perf_counter() - started) * 1000
 
         text_parts: list[str] = []
@@ -479,6 +571,7 @@ class MultiProviderLLMClient(LLMClient):
 
 def build_llm_client(settings: Any) -> LLMClient:
     """Construct the configured LLM client from settings."""
+    configure_anthropic_rate_limit(getattr(settings, "anthropic_tokens_per_minute", 0))
     if settings.use_fake_llm:
         return FakeLLMClient()
 

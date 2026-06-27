@@ -76,6 +76,10 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-3-5-sonnet-latest"
+    # Org input-tokens-per-minute budget. The harness paces Anthropic calls to
+    # stay under this so concurrent web-search-heavy brains don't 429. Set to
+    # your tier's actual cap (with headroom); 0 disables pacing.
+    anthropic_tokens_per_minute: int = 28_000
 
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
